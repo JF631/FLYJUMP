@@ -3,3 +3,6 @@ class GeneralException(Exception):
 
 class InsufficientMemoryException(Exception):
     pass
+
+class FileNotFoundException(Exception):
+    pass

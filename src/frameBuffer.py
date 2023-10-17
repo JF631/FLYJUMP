@@ -1,4 +1,6 @@
 import threading
+import psutil
+import numpy as np
 
 class FrameBuffer():
     '''
@@ -17,8 +19,11 @@ class FrameBuffer():
     
     Parameters
     ----------
-    size : int
-        size of ringbuffer in elements.
+    frame_count : int
+        number of frames present in video or number of frames needs to be 
+        buffered when using in combination with live stream.
+    frame_props : tuple
+        frame size in (width, height, channels)
     lock : bool
         enable (default) or disable the synchronization.
         if disabled, you have to handle lost frames or ensure a large enough 
@@ -38,17 +43,76 @@ class FrameBuffer():
     Especially for small buffer sizes, the first thread has to wait for the 
     second thread whenever it catches up. 
     '''
-    def __init__(self, size:int, lock:bool=True) -> None:
-        self.size = size
-        self.frame_buffer = [None] * size
+    # TODO: check new frame buffer implementation!
+    def __init__(self, frame_count:int, 
+                 frame_dims:tuple, lock:bool=True) -> None:
+        self.max_size = 2048 # must be power of 2
+        self.frame_dims = frame_dims
+        self.frame_count = frame_count
+        self.size = self.__ensure_memory(self.max_size)
+        # self.frame_buffer = [None] * self.size
+        print(self.frame_dims)
+        self.frame_buffer = np.empty((self.size, *self.frame_dims), dtype=np.uint8)
         self.current_end = 0 
         self.current_start = 0 
         self.enable_lock = lock
         if self.enable_lock:
             self.lock = threading.Lock()
             self.condition = threading.Condition(self.lock)
+    
+    def __next_convenient_size(self, size:int):
+        '''
+        Finds next power of 2 that is larger or equal to the input size.
+
+        Parameters
+        ----------
+        size : int
+            video frame count or desired buffer size.
+        '''
+        if (size & (size - 1) == 0): # size is already power of 2
+            return size
+        rtrn = 1
+        while rtrn < size:
+            rtrn <<= 2
+        return rtrn
+
+    def __ensure_memory(self, max_size):
+        '''
+        Ensures that the buffer does not exceed the available memory.
+        if desired buffer size is larger than available memory, the buffer size
+        is iteratively reduced by a factor of 2 until it fits into memory.
+
+        Parameters
+        ----------
+        max_size : int
+            guaranteed that the buffer won't exceed this size (in elements).    
+        '''
+        rtrn = (
+            min(self.__next_convenient_size(self.frame_count), max_size))
+        required_memory = (rtrn * self.frame_dims[0] * 
+                           self.frame_dims[1] * self.frame_dims[2])
+        available_memory = psutil.virtual_memory().total
+        print(f"Frame buffer of size: {rtrn} initialized, \n \
+                required memory: {required_memory / 1024 /  1024} MB, \n \
+                {required_memory / available_memory * 100} % of total memory")
+        if required_memory > available_memory:
+            return self.__ensure_memory(max_size >> 2)
+        return rtrn
+
         
-    def add(self, frame):
+    def add(self, frame: np.ndarray):
+        '''
+        Adds a frame to the ring buffer based on FIFO principle.
+
+        If synchronization is enabled, the opperation is delayed until the
+        processing thread has processed the frame that is about to be 
+        overwritten.
+
+        Parameters
+        ----------
+        frame : numpy.ndarray
+            frame to be added to the buffer (width, height, channels).
+        '''
         if self.enable_lock:
             with self.lock:
                 while self.current_frames() == self.size - 1:
@@ -59,11 +123,21 @@ class FrameBuffer():
         else:
             self.frame_buffer[self.current_end] = frame
             self.current_end = (self.current_end + 1) % self.size
-        
-    def get_frame(self, index):
-        return self.frame_buffer[index]
     
     def pop(self):
+        '''
+        Returns the oldest frame that has not been processed yet from the 
+        buffer.
+
+        pop() is chosen as name to indicate that the frame is invalid after
+        this operation as it will eventually be overwritten by the writing 
+        thread - it is NOT actually deleted from memory.
+
+        If synchronization is enabled, the opperation is delayed until a new 
+        frame is available. In reality, this shouldn't happen too often as the
+        writing thread will (always) be faster than the processing thread.
+
+        '''
         # print(f"end {self.current_end}, start {self.current_start}, frames left: {self.current_frames()}")
         if self.enable_lock:
             with self.lock:
@@ -77,6 +151,12 @@ class FrameBuffer():
             rtrn = self.frame_buffer[self.current_start]
             self.current_start = (self.current_start + 1) % self.size
             return rtrn
+        
+    def get_frame(self, index:int):
+        if(index < 0 or index >= self.size):
+            raise IndexError(f"""index {index} out of bounds - must be between
+                                0 and {self.size}""")
+        return self.frame_buffer[index]
     
     def current_frames(self):
         if self.current_start <= self.current_end:
@@ -93,9 +173,6 @@ class FrameBuffer():
     def __iter__(self):
         self.iter_index = 0
         return self
-    
-    def buffer_filled(self):
-        self.current_end -= 1
     
     def __next__(self):
         if self.iter_index < self.size:
