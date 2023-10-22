@@ -155,6 +155,12 @@ cython_debug/
 #output files
 output/
 
+#ignore all pylint related config files
+*pylint*
+
+#specific files that should not be included yet
+filehandler.py
+
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
