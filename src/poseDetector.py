@@ -1,10 +1,18 @@
-from .evalType import EvalType, Input
-from .exception import FileNotFoundException
+'''
+Module that abstracts the mediapipe framework and provides a convenient way to 
+perform pose detection on images, videos or live streams.
+
+Author: Jakob Faust (software_jaf@mx442.de)
+Date: 2023-10-19
+'''
+
+import os
 
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-import os
 
+from .eval import EvalType, Input
+from .exception import FileNotFoundException
 
 class PoseDetector:
     '''
@@ -27,8 +35,23 @@ class PoseDetector:
         self.input_type = input_type
         self.eval_type = eval_type
         self.pose_detector = self.__init_pose_detector()
-        
+
     def get_body_key_points(self, image, timestamp):
+        '''
+        performs pose detection on the provided input and returns the detected
+        body key points.
+        input can be an image, video frame or live stream frame.
+
+        Parameters
+        ----------
+        image : numpy.ndarray
+            input to perform pose detection on.
+            shape must be (height, width, channels).
+        timestamp : float
+            timestamp of the input frame.
+            can simply be the frame number when using a video file.
+
+        '''
         rtrn = 0
         if self.input_type == Input.IMAGE:
             rtrn = self.pose_detector.detect_for_image(image)
@@ -37,7 +60,33 @@ class PoseDetector:
         if self.input_type == Input.LIVESTREAM:
             rtrn = self.pose_detector.detect_async(image, timestamp)
         return rtrn
-    
+
+    def get_config(self):
+        '''
+        Returns a tuple of the current configuration.
+
+        Returns
+        -------
+        tuple
+            tuple of the current configuration.
+            (input type, evaluation type)
+        '''
+        return self.input_type.name, self.eval_type.name
+
+    def get_input_type(self):
+        '''
+        Returns the current input type.
+        (IMAGE, VIDEO or LIVESTREAM)
+        '''
+        return self.input_type.name
+
+    def get_eval_type(self):
+        '''
+        Returns the current evaluation type.
+        (REALTIME, NEAR_REALTIME or FULL)
+        '''
+        return self.eval_type.name
+
     def __init_pose_detector(self):
         current_path = os.path.dirname(__file__)
         print(current_path)
@@ -51,14 +100,14 @@ class PoseDetector:
         if not os.path.exists(model_path):
             raise FileNotFoundException(f"""model file could not be found -
                                         check file path {model_path}""")
-        baseOptions = python.BaseOptions(model_asset_path=model_path)
-        VisionRunningMode = vision.RunningMode
-        running_mode = VisionRunningMode.LIVE_STREAM
+        base_options = python.BaseOptions(model_asset_path=model_path)
+        vision_running_mode = vision.RunningMode
+        running_mode = vision_running_mode.LIVE_STREAM
         if self.input_type == Input.IMAGE:
-            running_mode = VisionRunningMode.IMAGE
+            running_mode = vision_running_mode.IMAGE
         if self.input_type == Input.VIDEO:
-            running_mode = VisionRunningMode.VIDEO
+            running_mode = vision_running_mode.VIDEO
         options = vision.PoseLandmarkerOptions(
-            base_options=baseOptions,
+            base_options=base_options,
             running_mode=running_mode)
         return vision.PoseLandmarker.create_from_options(options)

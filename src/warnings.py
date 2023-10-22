@@ -1,0 +1,2 @@
+class PotentialRaceConditionWarning(ResourceWarning):
+    pass

@@ -1,6 +1,21 @@
+'''
+Module that provides a thread safe ring buffer that is used to store video 
+frames or live stream frames.
+
+Writing and reading operations can be synchronized using a conditional lock.
+
+Author: Jakob Faust (software_jaf@mx442.de)
+Date: 2023-10-20
+'''
+
 import threading
+import warnings
 import psutil
 import numpy as np
+
+from .warnings import PotentialRaceConditionWarning
+
+warnings.filterwarnings("always")
 
 class FrameBuffer():
     '''
@@ -43,23 +58,27 @@ class FrameBuffer():
     Especially for small buffer sizes, the first thread has to wait for the 
     second thread whenever it catches up. 
     '''
-    # TODO: check new frame buffer implementation!
-    def __init__(self, frame_count:int, 
-                 frame_dims:tuple, lock:bool=True) -> None:
-        self.max_size = 2048 # must be power of 2
+    def __init__(self, frame_count:int,
+                 frame_dims:tuple, maxsize:int=2048, lock:bool=True) -> None:
+        self.max_size = maxsize # must be power of 2
         self.frame_dims = frame_dims
         self.frame_count = frame_count
         self.size = self.__ensure_memory(self.max_size)
+        if self.size < self.frame_count and not lock:
+            warnings.warn(f"""Buffer lock is disabled and buffer size
+                          {self.size} is smaller than the frame count
+                          {self.frame_count} - This might lead to race 
+                          conditions!""", PotentialRaceConditionWarning)
         # self.frame_buffer = [None] * self.size
         print(self.frame_dims)
         self.frame_buffer = np.empty((self.size, *self.frame_dims), dtype=np.uint8)
-        self.current_end = 0 
-        self.current_start = 0 
+        self.current_end = 0
+        self.current_start = 0
         self.enable_lock = lock
         if self.enable_lock:
             self.lock = threading.Lock()
             self.condition = threading.Condition(self.lock)
-    
+
     def __next_convenient_size(self, size:int):
         '''
         Finds next power of 2 that is larger or equal to the input size.
@@ -69,7 +88,7 @@ class FrameBuffer():
         size : int
             video frame count or desired buffer size.
         '''
-        if (size & (size - 1) == 0): # size is already power of 2
+        if size & (size - 1) == 0: # size is already power of 2
             return size
         rtrn = 1
         while rtrn < size:
@@ -89,7 +108,7 @@ class FrameBuffer():
         '''
         rtrn = (
             min(self.__next_convenient_size(self.frame_count), max_size))
-        required_memory = (rtrn * self.frame_dims[0] * 
+        required_memory = (rtrn * self.frame_dims[0] *
                            self.frame_dims[1] * self.frame_dims[2])
         available_memory = psutil.virtual_memory().total
         print(f"Frame buffer of size: {rtrn} initialized, \n \
@@ -99,7 +118,7 @@ class FrameBuffer():
             return self.__ensure_memory(max_size >> 2)
         return rtrn
 
-        
+
     def add(self, frame: np.ndarray):
         '''
         Adds a frame to the ring buffer based on FIFO principle.
@@ -123,7 +142,7 @@ class FrameBuffer():
         else:
             self.frame_buffer[self.current_end] = frame
             self.current_end = (self.current_end + 1) % self.size
-    
+
     def pop(self):
         '''
         Returns the oldest frame that has not been processed yet from the 
@@ -138,7 +157,6 @@ class FrameBuffer():
         writing thread will (always) be faster than the processing thread.
 
         '''
-        # print(f"end {self.current_end}, start {self.current_start}, frames left: {self.current_frames()}")
         if self.enable_lock:
             with self.lock:
                 while self.current_frames() == 0:
@@ -151,29 +169,68 @@ class FrameBuffer():
             rtrn = self.frame_buffer[self.current_start]
             self.current_start = (self.current_start + 1) % self.size
             return rtrn
-        
+
     def get_frame(self, index:int):
+        '''
+        Returns frame for a given index.
+
+        Parameters
+        ----------
+        index : int
+            index of frame that should be returned.
+            Must be in range [0, self.size)
+
+        Returns
+        -------
+        frame : np.ndarray
+            requested frame if it is present, None otherwise.
+
+        '''
         if(index < 0 or index >= self.size):
             raise IndexError(f"""index {index} out of bounds - must be between
                                 0 and {self.size}""")
         return self.frame_buffer[index]
-    
+
     def current_frames(self):
+        '''
+        Keeps track of the total number of VALID frames in buffer.
+        This is especially  important when synchronization in enabled.
+
+        Returns
+        -------
+        num_valid : int
+            number of valid frames currently present in the buffer. 
+        '''
         if self.current_start <= self.current_end:
             return self.current_end - self.current_start
-        else:
-            return (self.size - self.current_start) + self.current_end
-    
+        return (self.size - self.current_start) + self.current_end
+
     def get_latest(self):
+        '''
+        Returns last valid frame in buffer.
+
+        Returns
+        -------
+        frame : np.ndarray
+            last valid frame in buffer, shape (width, height, channels)
+        '''
         return self.get_frame(self.current_end)
-    
+
     def get_size(self):
+        '''
+        Returns number of elements (frames) the buffer is able store
+        
+        Returns
+        -------
+        size : int
+            buffer size in elements
+        '''
         return self.size
-    
+
     def __iter__(self):
         self.iter_index = 0
         return self
-    
+
     def __next__(self):
         if self.iter_index < self.size:
             self.iter_index += 1

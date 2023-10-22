@@ -1,15 +1,21 @@
-from .frameBuffer import FrameBuffer
-from .poseDetector import PoseDetector
-from .evalType import Input, EvalType
-from .exception import FileNotFoundException, GeneralException
+'''
+Module for analyzing body pose in a given video.
+
+Author: Jakob Faust (software_jaf@mx442.de)
+Date: 2023-10-17
+'''
+
+import threading
+import os
+import time
 
 import cv2
-import os
-import mediapipe as mp
-from mediapipe import solutions
-from mediapipe.framework.formats import landmark_pb2
-import numpy as np
-import threading
+
+from .framebuffer import FrameBuffer
+from .frame import Frame
+from .posedetector import PoseDetector
+from .eval import Input, EvalType
+from .exception import FileNotFoundException, GeneralException
 
 class Video():
     '''
@@ -30,20 +36,20 @@ class Video():
         path to video file.
     '''
     def __init__(self, path:str) -> None:
-        self.frame_count = 0
-        self.frame_rate = 0
+        self.__frame_count = 0
+        self.__frame_rate = 0
         self.dims = (0, 0, 0)
         self.__open(path)
-        self.path = path
-        self.output_path = ''
-        self.detector = PoseDetector(Input.VIDEO, EvalType.FULL)
-        self.frame_buffer = FrameBuffer(self.frame_count, self.dims, 
-                                        lock=False)
-        self.video_completed = threading.Event()
+        self.__path = path
+        self.__output_path = ''
+        self.__detector = PoseDetector(Input.VIDEO, EvalType.REALTIME)
+        self.__frame_buffer = FrameBuffer(self.__frame_count, self.dims,
+                                          maxsize=20, lock=True)
+        self.__video_completed = threading.Event()
 
     def __open(self, path:str):
         '''
-        Tries to open the video file, read metadata and display the first frame
+        Tries to open the video file, reads metadata and displays the first frame
 
         Parameters
         ----------
@@ -54,116 +60,80 @@ class Video():
         if not cap.isOpened():
             raise FileNotFoundException(f"""file could not be opened - check
                                         file path {path}""")
-        self.frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        self.frame_rate = cap.get(cv2.CAP_PROP_FPS)
+        self.__frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.__frame_rate = cap.get(cv2.CAP_PROP_FPS)
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.dims = (height, width, 3)
         valid, _ = cap.read()
         if not valid:
-            self.video_completed.set()
-            raise GeneralException(f"""OpenCV could not read from video file 
+            self.__video_completed.set()
+            raise GeneralException(f"""OpenCV could not read from video file
                                    {path}""")
-        # cv2.imshow("Video", first_frame) 
+        # cv2.imshow("Video", first_frame)
         cap.release()
 
-        
-    def __add_pose_overlay(self, frame, pose_landmarks, as_overlay=True):
-        '''
-        Visualizes detected pose key points on a given frame.
-        Within the process a copy of the original frame is generated, annotated 
-        and returned  
-        
-        Parameters
-        -----------
-        frame : np.array
-                frame in pixel (R,G,B) representation.\n
-        pose_landmarks : list 
-                detection result from mediapipe (pass 
-                result.pose_landmarks as argument)
-
-        Returns
-        --------
-        np.array : annotated frame with visualized key points of shape 
-        (width, height, color_depth)
-        '''
-        if as_overlay:
-            rtrn = np.copy(frame)
-        else:
-            rtrn = np.zeros_like(frame)
-        for pose in pose_landmarks:
-            pose_proto = landmark_pb2.NormalizedLandmarkList()
-            pose_proto.landmark.extend([
-                landmark_pb2.NormalizedLandmark(
-                    x=landmark.x, y=landmark.y, z=landmark.z) 
-                    for landmark in pose
-            ])
-            solutions.drawing_utils.draw_landmarks(
-                rtrn,
-                pose_proto,
-                solutions.pose.POSE_CONNECTIONS,
-                solutions.drawing_styles.get_default_pose_landmarks_style()
-            )
-        return rtrn
-        
     def __read_video_file(self):
         '''
         reads video frame by frame from file, visualizes the frame and adds it
         to a frame buffer.
         '''
-        cap = cv2.VideoCapture(self.path)
+        cap = cv2.VideoCapture(self.__path)
         while cap.isOpened():
             valid, frame = cap.read()
             if not valid:
-                self.video_completed.set()
+                self.__video_completed.set()
                 print("video ended or an error occurred")
                 break
-            self.frame_buffer.add(frame)
-            cv2.imshow("Video", frame)
-            if (cv2.waitKey(int((1 / self.frame_rate) * 1000)) &
+            self.__frame_buffer.add(frame)
+            # cv2.imshow("Video", frame)
+            if (cv2.waitKey(0) &
                     0xFF == ord('q')):
                 break
         cap.release()
         print("released input")
-        
+
     def __perform_pose_detection(self):
         '''
         Runs pose detection on frames from the frame buffer and writes the
         result to a video file.
         '''
-        self.output_path = os.path.dirname(__file__)
-        self.output_path = os.path.join(self.output_path, '../output/test.mp4')
+        self.__output_path = os.path.dirname(__file__)
+        self.__output_path = os.path.join(self.__output_path, '../output/test.mp4')
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        out = cv2.VideoWriter(self.output_path, fourcc, 30, (self.dims[1], self.dims[0]))
-        playback = False 
+        out = cv2.VideoWriter(self.__output_path, fourcc, 30, (self.dims[1], self.dims[0]))
+        playback = False
         lost_frames = 0
-        counter = 0 
+        counter = 0
         while True:
-            if self.frame_buffer.current_frames() > 0:
-                frame = self.frame_buffer.pop()
+            if self.__frame_buffer.current_frames() > 0:
+                start = time.time()
+                frame = Frame(self.__frame_buffer.pop())
                 playback = True
                 if frame is None:
                     print("Empty frame received")
                     break
                 counter += 1
-                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, 
-                                    data=frame)
-                res = self.detector.get_body_key_points(mp_image, counter)
+                mp_image = frame.to_mediapipe_image()
+                res = self.__detector.get_body_key_points(mp_image, counter)
                 if res.pose_landmarks:
-                    frame = self.__add_pose_overlay(frame, res.pose_landmarks, 
-                                                  as_overlay=False)
-                    out.write(frame)
+                    frame.annotate(res.pose_landmarks, as_overlay=True)
+                    end = time.time()
+                    fps = 1 / (end - start)
+                    cv2.putText(frame.data(), f'FPS: {fps:.2f}', (10, 60),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    out.write(frame.data())
                 # cv2.imshow("TEST", frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
+                if cv2.waitKey(0) & 0xFF == ord('q'):
                     break
-            elif playback and self.video_completed.is_set():
+            elif playback and self.__video_completed.is_set():
                 break
         out.release()
-        lost_frames = (1 - (counter / self.frame_count)) * 100
-        print(f"lost frames: {self.frame_count - counter} \
+        lost_frames = (1 - (counter / self.__frame_count)) * 100
+        print(f"lost frames: {self.__frame_count - counter} \
               ({lost_frames:.2f}%)" )
         cv2.destroyAllWindows()
-        
+
     def analyze(self):
         load_thread = threading.Thread(target=self.__read_video_file)
         visualize_thread = threading.Thread(
@@ -172,9 +142,25 @@ class Video():
         visualize_thread.start()
         load_thread.join()
         visualize_thread.join()
-    
-    def get_path(self):
-        return self.path
-        
-    def get_output_path(self):
-        return self.output_path
+
+    def get_path(self)->str:
+        '''
+        returns input video path.
+
+        Returns
+        -------
+        path : str
+            input video path.
+        '''
+        return self.__path
+
+    def get_output_path(self)->str:
+        '''
+        returns output video path.
+
+        Returns
+        -------
+        path : str
+            output video path.
+        '''
+        return self.__output_path
