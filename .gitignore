@@ -155,9 +155,6 @@ cython_debug/
 #output files
 output/
 
-#ignore all pylint related config files
-*pylint*
-
 #specific files that should not be included yet
 filehandler.py
 
