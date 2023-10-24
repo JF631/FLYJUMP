@@ -135,6 +135,12 @@ class Video():
         cv2.destroyAllWindows()
 
     def analyze(self):
+        '''
+        Starts the body pose analyzing process on two threads.
+        One thread reads in video from storage and loads it into a frame 
+        buffer, while the other one performs pose detection using frames
+        from this buffer.
+        '''
         load_thread = threading.Thread(target=self.__read_video_file)
         visualize_thread = threading.Thread(
             target=self.__perform_pose_detection)
