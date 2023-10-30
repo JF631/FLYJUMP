@@ -2,7 +2,7 @@
 Module that provides several custom exceptions that can be thrown.
 
 Author: Jakob Faust (software_jaf@mx442.de)
-Date: 2023-10-124
+Date: 2023-10-24
 '''
 
 class GeneralException(Exception):
