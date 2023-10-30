@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>889</width>
-    <height>590</height>
+    <width>905</width>
+    <height>596</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -31,7 +31,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>889</width>
+     <width>905</width>
      <height>22</height>
     </rect>
    </property>
@@ -39,14 +39,17 @@
     <property name="title">
      <string>File</string>
     </property>
-    <addaction name="choose_video_file"/>
+    <addaction name="action_choose_video_file"/>
    </widget>
    <addaction name="menuFile"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
-  <action name="choose_video_file">
+  <action name="action_choose_video_file">
    <property name="text">
-    <string>Open</string>
+    <string>Open Video</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
    </property>
   </action>
  </widget>
