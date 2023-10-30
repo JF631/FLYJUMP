@@ -42,7 +42,7 @@ class Video():
         self.__open(path)
         self.__path = path
         self.__output_path = ''
-        self.__detector = PoseDetector(Input.VIDEO, EvalType.REALTIME)
+        self.__detector = PoseDetector(Input.VIDEO, EvalType.FULL)
         self.__frame_buffer = FrameBuffer(self.__frame_count, self.dims,
                                           maxsize=20, lock=True)
         self.__video_completed = threading.Event()
@@ -98,8 +98,9 @@ class Video():
         Runs pose detection on frames from the frame buffer and writes the
         result to a video file.
         '''
+        input_file_name = os.path.splitext(os.path.basename(self.__path))[0]
         self.__output_path = os.path.dirname(__file__)
-        self.__output_path = os.path.join(self.__output_path, '../output/test.mp4')
+        self.__output_path = os.path.join(self.__output_path, f'../output/{input_file_name}_analyzed.mp4')
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
         out = cv2.VideoWriter(self.__output_path, fourcc, 30, (self.dims[1], self.dims[0]))
         playback = False
