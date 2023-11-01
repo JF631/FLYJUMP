@@ -13,7 +13,7 @@ import warnings
 import psutil
 import numpy as np
 
-from .warnings import PotentialRaceConditionWarning
+from utils.warnings import PotentialRaceConditionWarning
 
 warnings.filterwarnings("always")
 
@@ -70,7 +70,6 @@ class FrameBuffer():
                           {self.frame_count} - This might lead to race 
                           conditions!""", PotentialRaceConditionWarning)
         # self.frame_buffer = [None] * self.size
-        print(self.frame_dims)
         self.frame_buffer = np.empty((self.size, *self.frame_dims), dtype=np.uint8)
         self.current_end = 0
         self.current_start = 0
@@ -110,11 +109,12 @@ class FrameBuffer():
             min(self.__next_convenient_size(self.frame_count), max_size))
         required_memory = (rtrn * self.frame_dims[0] *
                            self.frame_dims[1] * self.frame_dims[2])
-        available_memory = psutil.virtual_memory().total
-        print(f"Frame buffer of size: {rtrn} initialized, \n \
-                required memory: {required_memory / 1024 /  1024} MB, \n \
-                {required_memory / available_memory * 100} % of total memory")
+        available_memory = psutil.virtual_memory().available
+        # print(f"Frame buffer of size: {rtrn} initialized, \n \
+        #         required memory: {required_memory / 1024 /  1024} MB, \n \
+        #         {required_memory / available_memory * 100} % of total memory")
         if required_memory > available_memory:
+            print("no more memory - trying to downsize buffer")
             return self.__ensure_memory(max_size >> 2)
         return rtrn
 

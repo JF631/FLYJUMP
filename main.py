@@ -1,6 +1,6 @@
 import sys
 
-from src import video as vd
+from ljanalyzer import video as vd
 import argparse
 from PyQt5.QtWidgets import QApplication
 

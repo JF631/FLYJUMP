@@ -15,7 +15,7 @@ from .framebuffer import FrameBuffer
 from .frame import Frame
 from .posedetector import PoseDetector
 from .eval import Input, EvalType
-from .exception import FileNotFoundException, GeneralException
+from utils.exception import FileNotFoundException, GeneralException
 
 class Video():
     '''
@@ -44,7 +44,7 @@ class Video():
         self.__output_path = ''
         self.__detector = PoseDetector(Input.VIDEO, EvalType.FULL)
         self.__frame_buffer = FrameBuffer(self.__frame_count, self.dims,
-                                          maxsize=20, lock=True)
+                                          maxsize=2048, lock=True)
         self.__video_completed = threading.Event()
 
     def __open(self, path:str):
@@ -131,8 +131,9 @@ class Video():
                 break
         out.release()
         lost_frames = (1 - (counter / self.__frame_count)) * 100
-        print(f"lost frames: {self.__frame_count - counter} \
-              ({lost_frames:.2f}%)" )
+        print(f"""video {self.__path} analyzed \n
+              lost frames: {self.__frame_count - counter} 
+              ({lost_frames:.2f}%)""")
         cv2.destroyAllWindows()
 
     def analyze(self):

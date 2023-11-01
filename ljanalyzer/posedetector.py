@@ -12,7 +12,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 from .eval import EvalType, Input
-from .exception import FileNotFoundException
+from utils.exception import FileNotFoundException
 
 class PoseDetector:
     '''

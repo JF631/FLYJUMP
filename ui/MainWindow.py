@@ -19,7 +19,7 @@ from PyQt5 import QtGui
 from PyQt5.QtWidgets import QMainWindow, QFileDialog
 
 from .Ui_MainWindow import Ui_MainWindow
-from src.video import Video
+from ljanalyzer.video import Video
 
 def start_video_analysis(file_name: str):
         vd = Video(file_name)
