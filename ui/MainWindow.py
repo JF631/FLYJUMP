@@ -31,7 +31,7 @@ class MainWindow(QMainWindow):
             self.choose_file_dialog)
         self.progress_widgets = {}
         self.thread_pool = QThreadPool.globalInstance()
-        self.thread_pool.setMaxThreadCount(self.thread_pool.maxThreadCount() / 2)
+        self.thread_pool.setMaxThreadCount(int(self.thread_pool.maxThreadCount() / 2))
         self.control_signals = controlsignals.ControlSignals()
         
     def setupUi(self):
