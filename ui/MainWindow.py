@@ -13,11 +13,11 @@ Author: Jakob Faust (software_jaf@mx442.de)
 Date: 2023-10-28
 '''
 
-from PyQt5.QtWidgets import QMainWindow, QFileDialog, QVBoxLayout, QHBoxLayout
-from PyQt5.QtCore import QThreadPool, Qt
+from PyQt5.QtWidgets import QMainWindow, QFileDialog
+from PyQt5.QtCore import QThreadPool
 
 from .Ui_MainWindow import Ui_MainWindow
-from .VideoProgressWidget import VideoProgressWidget
+from .VideoProgressWidget import VideoProgressBar, VideoProgessArea
 from ljanalyzer.video import Video
 from utils import controlsignals
 
@@ -31,14 +31,14 @@ class MainWindow(QMainWindow):
             self.choose_file_dialog)
         self.progress_widgets = {}
         self.thread_pool = QThreadPool.globalInstance()
-        self.thread_pool.setMaxThreadCount(int(self.thread_pool.maxThreadCount() / 2))
+        self.thread_pool.setMaxThreadCount(
+            int(self.thread_pool.maxThreadCount() / 2)
+        )
         self.control_signals = controlsignals.ControlSignals()
-        
+
     def setupUi(self):
-        self.main_layout = self.centralWidget().layout()
-        self.progressbar_layout = QHBoxLayout()
-        self.progressbar_layout.setAlignment(Qt.AlignBottom | Qt.AlignRight)
-        self.main_layout.addChildLayout(self.progressbar_layout)
+        self.progressbar_area = VideoProgessArea(self)
+        self.centralWidget().layout().addWidget(self.progressbar_area)
 
     def choose_file_dialog(self):
         '''
@@ -54,19 +54,14 @@ class MainWindow(QMainWindow):
             return
         for file_name in file_names:
             video_task = Video(file_name, self.control_signals)
-            progress_widget = VideoProgressWidget(video_task.get_path(),
-                                                  video_task.signals)
+            progress_widget = VideoProgressBar(video_task.get_path(),
+                                               video_task.signals)
             video_task.signals.progress.connect(self.show_progress)
-            self.progressbar_layout.addWidget(progress_widget)
+            self.progressbar_area.add_widget(progress_widget)
             self.thread_pool.start(video_task)
-        # self.ui.centralwidget.(self.main_layout)
-            
-    def show_progress(self, progress):
-        pass
-        # print("%d%% done" % progress)
-        
+
     def closeEvent(self, event) -> None:
         self.thread_pool.clear()
         self.control_signals.terminate.emit()
         self.thread_pool.waitForDone()
-        event.accept()  
+        event.accept()

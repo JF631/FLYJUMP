@@ -11,7 +11,7 @@ import time
 
 import cv2
 from PyQt5.QtCore import QRunnable
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QObject, pyqtSignal
 
 from .framebuffer import FrameBuffer
 from .frame import Frame
@@ -155,6 +155,7 @@ class Video(QRunnable):
         print(f"""video {self.__path} analyzed \n
               lost frames: {self.__frame_count - counter} 
               ({lost_frames:.2f}%)""")
+        self.signals.finished.emit()
         cv2.destroyAllWindows()
         
     def update_progress(self, current_progress: int):
