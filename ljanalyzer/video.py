@@ -10,14 +10,22 @@ import os
 import time
 
 import cv2
+from PyQt5.QtCore import QRunnable
+from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 
 from .framebuffer import FrameBuffer
 from .frame import Frame
 from .posedetector import PoseDetector
 from .eval import Input, EvalType
 from utils.exception import FileNotFoundException, GeneralException
+from utils.controlsignals import ControlSignals
 
-class Video():
+class VideoSignals(QObject):
+    finished = pyqtSignal()
+    error = pyqtSignal()
+    progress = pyqtSignal(int)
+
+class Video(QRunnable):
     '''
     Abstraction of a video file. 
     Main purpose is to provide a convenient way to analyze a video regarding
@@ -35,7 +43,8 @@ class Video():
     path : str
         path to video file.
     '''
-    def __init__(self, path:str) -> None:
+    def __init__(self, path:str, control_signals: ControlSignals) -> None:
+        super().__init__()
         self.__frame_count = 0
         self.__frame_rate = 0
         self.dims = (0, 0, 0)
@@ -46,6 +55,9 @@ class Video():
         self.__frame_buffer = FrameBuffer(self.__frame_count, self.dims,
                                           maxsize=2048, lock=True)
         self.__video_completed = threading.Event()
+        self.abort = False
+        self.signals = VideoSignals()
+        control_signals.terminate.connect(self.terminate)
 
     def __open(self, path:str):
         '''
@@ -80,6 +92,8 @@ class Video():
         '''
         cap = cv2.VideoCapture(self.__path)
         while cap.isOpened():
+            if self.abort:
+                break
             valid, frame = cap.read()
             if not valid:
                 self.__video_completed.set()
@@ -111,6 +125,8 @@ class Video():
         lost_frames = 0
         counter = 0
         while True:
+            if self.abort:
+                break
             if self.__frame_buffer.current_frames() > 0:
                 start = time.time()
                 frame = Frame(self.__frame_buffer.pop())
@@ -119,6 +135,7 @@ class Video():
                     print("Empty frame received")
                     break
                 counter += 1
+                self.update_progress(int((counter / self.__frame_count) * 100))
                 mp_image = frame.to_mediapipe_image()
                 res = self.__detector.get_body_key_points(mp_image, counter)
                 if res.pose_landmarks:
@@ -139,8 +156,11 @@ class Video():
               lost frames: {self.__frame_count - counter} 
               ({lost_frames:.2f}%)""")
         cv2.destroyAllWindows()
-
-    def analyze(self):
+        
+    def update_progress(self, current_progress: int):
+        self.signals.progress.emit(current_progress)
+    
+    def run(self) -> None:
         '''
         Starts the body pose analyzing process on two threads.
         One thread reads in video from storage and loads it into a frame 
@@ -154,6 +174,11 @@ class Video():
         visualize_thread.start()
         load_thread.join()
         visualize_thread.join()
+    
+    def terminate(self):
+        print("aborting analysis")
+        self.signals.finished.emit()
+        self.abort = True
 
     def get_path(self)->str:
         '''
