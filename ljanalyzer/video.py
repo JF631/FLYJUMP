@@ -100,9 +100,13 @@ class Video():
         '''
         input_file_name = os.path.splitext(os.path.basename(self.__path))[0]
         self.__output_path = os.path.dirname(__file__)
-        self.__output_path = os.path.join(self.__output_path, f'../output/{input_file_name}_analyzed.mp4')
+        self.__output_path = os.path.join(
+            self.__output_path,
+            f'../output/{input_file_name}_analyzed.mp4'
+        )
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        out = cv2.VideoWriter(self.__output_path, fourcc, 30, (self.dims[1], self.dims[0]))
+        out = cv2.VideoWriter(self.__output_path, fourcc, 30, (self.dims[1],
+                                                               self.dims[0]))
         playback = False
         lost_frames = 0
         counter = 0
@@ -118,7 +122,7 @@ class Video():
                 mp_image = frame.to_mediapipe_image()
                 res = self.__detector.get_body_key_points(mp_image, counter)
                 if res.pose_landmarks:
-                    frame.annotate(res.pose_landmarks, as_overlay=True)
+                    frame.annotate(res.pose_landmarks, as_overlay=False)
                     end = time.time()
                     fps = 1 / (end - start)
                     cv2.putText(frame.data(), f'FPS: {fps:.2f}', (10, 60),

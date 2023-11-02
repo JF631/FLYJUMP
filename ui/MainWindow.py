@@ -14,7 +14,6 @@ Date: 2023-10-28
 '''
 
 import multiprocessing
-from PyQt5 import QtGui
 
 from PyQt5.QtWidgets import QMainWindow, QFileDialog
 
@@ -49,7 +48,6 @@ class MainWindow(QMainWindow):
             video_process = multiprocessing.Process(target=start_video_analysis, args=(file_name,))
             video_process.start()
             self.running_processes.append(video_process)
-        
         
     def closeEvent(self, event) -> None:
         for process in self.running_processes:
