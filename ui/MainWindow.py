@@ -14,32 +14,35 @@ Date: 2023-10-28
 '''
 
 from PyQt5.QtWidgets import QMainWindow, QFileDialog
-from PyQt5.QtCore import QThreadPool
+from PyQt5.QtCore import QThreadPool, pyqtSlot
 
 from .Ui_MainWindow import Ui_MainWindow
 from .VideoProgressWidget import VideoProgressBar, VideoProgessArea
 from ljanalyzer.video import Video
-from utils import controlsignals
+from utils.controlsignals import ControlSignals, SharedBool
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+        self.control_signals = ControlSignals()
+        self.abort_flag = SharedBool()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.setupUi()
         self.ui.action_choose_video_file.triggered.connect(
             self.choose_file_dialog)
-        self.progress_widgets = {}
         self.thread_pool = QThreadPool.globalInstance()
+        # limit used cpu cores to half of available cores.
+        # This is because usually one video analysis uses two cores.  
         self.thread_pool.setMaxThreadCount(
             int(self.thread_pool.maxThreadCount() / 2)
         )
-        self.control_signals = controlsignals.ControlSignals()
 
     def setupUi(self):
         self.progressbar_area = VideoProgessArea(self)
         self.centralWidget().layout().addWidget(self.progressbar_area)
 
+    @pyqtSlot()
     def choose_file_dialog(self):
         '''
         opens file chooser dialog to let user select a video file
@@ -49,19 +52,19 @@ class MainWindow(QMainWindow):
         file_names, _ = QFileDialog.getOpenFileNames(
             self, 'Choose a Video File', '',
             'Video Files (*.mp4 *.avi *.mkv *.mov);;All Files (*)',
-            options=dialog_options)
+            options=dialog_options
+        )
         if not file_names:
             return
         for file_name in file_names:
-            video_task = Video(file_name, self.control_signals)
-            progress_widget = VideoProgressBar(video_task.get_path(),
+            video_task = Video(file_name, self.abort_flag)
+            progress_widget = VideoProgressBar(video_task.get_filename(),
                                                video_task.signals)
-            video_task.signals.progress.connect(self.show_progress)
             self.progressbar_area.add_widget(progress_widget)
             self.thread_pool.start(video_task)
 
     def closeEvent(self, event) -> None:
+        self.abort_flag.set()
         self.thread_pool.clear()
-        self.control_signals.terminate.emit()
         self.thread_pool.waitForDone()
         event.accept()

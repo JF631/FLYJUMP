@@ -10,17 +10,33 @@ import os
 import time
 
 import cv2
-from PyQt5.QtCore import QRunnable
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QRunnable, QObject, pyqtSignal
 
 from .framebuffer import FrameBuffer
 from .frame import Frame
 from .posedetector import PoseDetector
 from .eval import Input, EvalType
 from utils.exception import FileNotFoundException, GeneralException
-from utils.controlsignals import ControlSignals
+from utils.controlsignals import ControlSignals, SharedBool
 
 class VideoSignals(QObject):
+    '''
+    Defines PyQt Signals that can be emmitted by a video object.
+    
+    Connect to these signals to handle following events.
+
+    Signals
+    -------
+    finished : pyqtSignal
+        indicates that the video analysis for this object has finished
+        (also emitted when process is terminated!)
+    error : pyqtSignal
+        emmitted when an error occured during the analysis process
+    progress : pyqtSignal(int)
+        publishes the current progress for the video object to keep track of 
+        analysis progress in range [0 - 100] % (e.g. for progressbars)  
+
+    '''
     finished = pyqtSignal()
     error = pyqtSignal()
     progress = pyqtSignal(int)
@@ -43,7 +59,7 @@ class Video(QRunnable):
     path : str
         path to video file.
     '''
-    def __init__(self, path:str, control_signals: ControlSignals) -> None:
+    def __init__(self, path:str, abort: SharedBool) -> None:
         super().__init__()
         self.__frame_count = 0
         self.__frame_rate = 0
@@ -53,11 +69,17 @@ class Video(QRunnable):
         self.__output_path = ''
         self.__detector = PoseDetector(Input.VIDEO, EvalType.FULL)
         self.__frame_buffer = FrameBuffer(self.__frame_count, self.dims,
-                                          maxsize=2048, lock=True)
+                                          maxsize=1024, lock=True)
         self.__video_completed = threading.Event()
-        self.abort = False
+        self.abort = abort
         self.signals = VideoSignals()
-        control_signals.terminate.connect(self.terminate)
+    
+    def terminate(self)->None:
+        '''
+        Stop running analysis.
+        '''
+        print("trying to abort analysis")
+        self.signals.finished.emit()
 
     def __open(self, path:str):
         '''
@@ -92,8 +114,9 @@ class Video(QRunnable):
         '''
         cap = cv2.VideoCapture(self.__path)
         while cap.isOpened():
-            if self.abort:
-                break
+            if self.abort.get():
+                self.terminate()
+                return
             valid, frame = cap.read()
             if not valid:
                 self.__video_completed.set()
@@ -112,11 +135,10 @@ class Video(QRunnable):
         Runs pose detection on frames from the frame buffer and writes the
         result to a video file.
         '''
-        input_file_name = os.path.splitext(os.path.basename(self.__path))[0]
         self.__output_path = os.path.dirname(__file__)
         self.__output_path = os.path.join(
             self.__output_path,
-            f'../output/{input_file_name}_analyzed.mp4'
+            f'../output/{self.get_filename()}_analyzed.mp4'
         )
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
         out = cv2.VideoWriter(self.__output_path, fourcc, 30, (self.dims[1],
@@ -125,7 +147,8 @@ class Video(QRunnable):
         lost_frames = 0
         counter = 0
         while True:
-            if self.abort:
+            if self.abort.get():
+                self.terminate()
                 break
             if self.__frame_buffer.current_frames() > 0:
                 start = time.time()
@@ -159,6 +182,9 @@ class Video(QRunnable):
         cv2.destroyAllWindows()
         
     def update_progress(self, current_progress: int):
+        '''
+        Emits progress signal with current analysis progress in percent 
+        '''
         self.signals.progress.emit(current_progress)
     
     def run(self) -> None:
@@ -175,11 +201,9 @@ class Video(QRunnable):
         visualize_thread.start()
         load_thread.join()
         visualize_thread.join()
-    
-    def terminate(self):
-        print("aborting analysis")
-        self.signals.finished.emit()
-        self.abort = True
+
+    def get_filename(self)->str:
+        return os.path.splitext(os.path.basename(self.__path))[0]
 
     def get_path(self)->str:
         '''
