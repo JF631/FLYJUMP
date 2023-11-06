@@ -26,6 +26,7 @@ class Frame():
         self.__right_knee_angle = 0.0
         self.__left_knee_angle = 0.0
         self.__hip_height = 0.0
+        self.__foot_tip = 0.0
 
     def __bool__(self):
         return self.__data is not None
@@ -47,6 +48,7 @@ class Frame():
             self.__data = np.zeros_like(self.__data)
         for pose in pose_landmarks:
             hip, knee, foot = pose[24:30:2]
+            self.foot_tip = pose[32]
             self.__hip_height = hip.y
             hip_knee_vec = np.array([knee.x - hip.x, knee.y - hip.y])
             knee_foot_vec = np.array([foot.x - knee.x, foot.y - knee.y])
@@ -101,6 +103,9 @@ class Frame():
             knee_angles[0]: right knee angle, knee_angles[1]: left knee angle´.
         '''
         return np.array([self.__right_knee_angle, self.__left_knee_angle])
+    
+    def foot_pos(self):
+        return self.foot_tip
 
     def centroid_height(self) -> float:
         '''

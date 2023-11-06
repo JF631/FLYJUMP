@@ -8,6 +8,7 @@ Date: 2023-10-17
 import threading
 import os
 import time
+from math import sqrt
 
 import cv2
 from PyQt5.QtCore import QRunnable, QObject, pyqtSignal
@@ -17,7 +18,7 @@ from .frame import Frame
 from .posedetector import PoseDetector
 from .eval import Input, EvalType
 from utils.exception import FileNotFoundException, GeneralException
-from utils.controlsignals import ControlSignals, SharedBool
+from utils.controlsignals import SharedBool
 
 class VideoSignals(QObject):
     '''
@@ -67,7 +68,7 @@ class Video(QRunnable):
         self.__open(path)
         self.__path = path
         self.__output_path = ''
-        self.__detector = PoseDetector(Input.VIDEO, EvalType.FULL)
+        self.__detector = PoseDetector(Input.VIDEO, EvalType.REALTIME)
         self.__frame_buffer = FrameBuffer(self.__frame_count, self.dims,
                                           maxsize=1024, lock=True)
         self.__video_completed = threading.Event()
@@ -145,7 +146,14 @@ class Video(QRunnable):
                                                                self.dims[0]))
         playback = False
         lost_frames = 0
+        velocity_frames = 2
         counter = 0
+        foot_x1 = 0
+        foot_x2 = 0
+        foot_y1 = 0
+        foot_y2 = 0
+        vel_x = 0.0
+        vel_y = 0.0
         while True:
             if self.abort.get():
                 self.terminate()
@@ -157,18 +165,35 @@ class Video(QRunnable):
                 if frame is None:
                     print("Empty frame received")
                     break
-                counter += 1
-                self.update_progress(int((counter / self.__frame_count) * 100))
                 mp_image = frame.to_mediapipe_image()
                 res = self.__detector.get_body_key_points(mp_image, counter)
                 if res.pose_landmarks:
                     frame.annotate(res.pose_landmarks, as_overlay=False)
+                    if counter == 0:
+                        foot_y1 = frame.foot_pos().y
+                        foot_x1 = frame.foot_pos().x
+                    if (counter % velocity_frames) == 0:
+                        foot_y2 = frame.foot_pos().y
+                        foot_x2 = frame.foot_pos().x
+                        vec_x = foot_x2 - foot_x1
+                        foot_x1 = foot_x2
+                        vel_x = vec_x / (velocity_frames / self.__frame_rate)
+                        vec_y = foot_y2 - foot_y1
+                        foot_y1 = foot_y2
+                        vel_y = vec_y / (velocity_frames / self.__frame_rate)
+                        if sqrt(vel_x**2 + vel_y**2) < 0.1:
+                            cv2.putText(frame.data(), f'GROUND_CONTACT', (10, 120),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    cv2.putText(frame.data(), f'velx: {vel_x:.4f} vely: {vel_y: .4f}', (10, 90),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                     end = time.time()
                     fps = 1 / (end - start)
                     cv2.putText(frame.data(), f'FPS: {fps:.2f}', (10, 60),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                     out.write(frame.data())
                 # cv2.imshow("TEST", frame)
+                counter += 1
+                self.update_progress(int((counter / self.__frame_count) * 100))
                 if cv2.waitKey(0) & 0xFF == ord('q'):
                     break
             elif playback and self.__video_completed.is_set():
