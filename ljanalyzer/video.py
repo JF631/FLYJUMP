@@ -12,6 +12,7 @@ from math import sqrt
 
 import cv2
 from PyQt5.QtCore import QRunnable, QObject, pyqtSignal
+import numpy as np
 
 from .framebuffer import FrameBuffer
 from .frame import Frame
@@ -68,7 +69,7 @@ class Video(QRunnable):
         self.__open(path)
         self.__path = path
         self.__output_path = ''
-        self.__detector = PoseDetector(Input.VIDEO, EvalType.REALTIME)
+        self.__detector = PoseDetector(Input.VIDEO, EvalType.FULL)
         self.__frame_buffer = FrameBuffer(self.__frame_count, self.dims,
                                           maxsize=1024, lock=True)
         self.__video_completed = threading.Event()
@@ -146,21 +147,19 @@ class Video(QRunnable):
                                                                self.dims[0]))
         playback = False
         lost_frames = 0
-        velocity_frames = 2
+        velocity_frames = 2 
+        foot_pos = np.empty((2,2), dtype='f4')
+        foot_pos2 = np.empty((2,2), dtype='f4')
+        vel = np.empty((1,2), dtype='f4')
         counter = 0
-        foot_x1 = 0
-        foot_x2 = 0
-        foot_y1 = 0
-        foot_y2 = 0
-        vel_x = 0.0
-        vel_y = 0.0
+        frame = Frame()
         while True:
             if self.abort.get():
                 self.terminate()
                 break
             if self.__frame_buffer.current_frames() > 0:
                 start = time.time()
-                frame = Frame(self.__frame_buffer.pop())
+                frame.update(self.__frame_buffer.pop())
                 playback = True
                 if frame is None:
                     print("Empty frame received")
@@ -168,23 +167,18 @@ class Video(QRunnable):
                 mp_image = frame.to_mediapipe_image()
                 res = self.__detector.get_body_key_points(mp_image, counter)
                 if res.pose_landmarks:
-                    frame.annotate(res.pose_landmarks, as_overlay=False)
+                    frame.annotate(res.pose_landmarks, as_overlay=True)
                     if counter == 0:
-                        foot_y1 = frame.foot_pos().y
-                        foot_x1 = frame.foot_pos().x
+                        foot_pos = frame.foot_pos()
                     if (counter % velocity_frames) == 0:
-                        foot_y2 = frame.foot_pos().y
-                        foot_x2 = frame.foot_pos().x
-                        vec_x = foot_x2 - foot_x1
-                        foot_x1 = foot_x2
-                        vel_x = vec_x / (velocity_frames / self.__frame_rate)
-                        vec_y = foot_y2 - foot_y1
-                        foot_y1 = foot_y2
-                        vel_y = vec_y / (velocity_frames / self.__frame_rate)
-                        if sqrt(vel_x**2 + vel_y**2) < 0.1:
+                        foot_pos2 = frame.foot_pos()
+                        foot_pos3 = foot_pos2 - foot_pos
+                        foot_pos = foot_pos2
+                        foot_pos3 /= (velocity_frames / self.__frame_rate)
+                        vel = np.linalg.norm(foot_pos3, axis=0)
+                        # print(vel[0])
+                        if vel[0] < 0.05 or vel[1] < 0.05:
                             cv2.putText(frame.data(), f'GROUND_CONTACT', (10, 120),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                    cv2.putText(frame.data(), f'velx: {vel_x:.4f} vely: {vel_y: .4f}', (10, 90),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                     end = time.time()
                     fps = 1 / (end - start)
@@ -199,6 +193,7 @@ class Video(QRunnable):
             elif playback and self.__video_completed.is_set():
                 break
         out.release()
+        frame.clear()
         lost_frames = (1 - (counter / self.__frame_count)) * 100
         print(f"""video {self.__path} analyzed \n
               lost frames: {self.__frame_count - counter} 
