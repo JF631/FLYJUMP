@@ -6,6 +6,8 @@ Author: Jakob Faust (software_jaf@mx442.de)
 Date: 2023-10-22
 '''
 
+from typing import Union
+
 import cv2
 import mediapipe as mp
 from mediapipe import solutions
@@ -29,7 +31,7 @@ class Frame():
     frame.clear() before frame.update(new_frame) 
 
     '''
-    def __init__(self, frame:np.ndarray | None = ...) -> None:
+    def __init__(self, frame:Union[np.ndarray, None] = ...) -> None:
         self.__right_knee_angle = 0.0
         self.__left_knee_angle = 0.0
         self.__hip_height = 0.0

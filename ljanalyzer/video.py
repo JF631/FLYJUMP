@@ -81,6 +81,14 @@ class Video(QRunnable):
         '''
         print("trying to abort analysis")
         self.signals.finished.emit()
+    
+    def __ground_contact(self, prev_foot_pos: np.ndarray, 
+                         curr_foot_pos:np.ndarray):
+        frames_to_consider = 2
+        diff = curr_foot_pos - prev_foot_pos
+        diff /= (frames_to_consider / self.__frame_rate)
+        vel = np.linalg.norm(diff, axis=0)
+        return np.any(vel < 0.1)
 
     def __open(self, path:str):
         '''
@@ -171,14 +179,10 @@ class Video(QRunnable):
                         foot_pos = frame.foot_pos()
                     if (counter % velocity_frames) == 0:
                         foot_pos2 = frame.foot_pos()
-                        foot_pos3 = foot_pos2 - foot_pos
-                        foot_pos = foot_pos2
-                        foot_pos3 /= (velocity_frames / self.__frame_rate)
-                        vel = np.linalg.norm(foot_pos3, axis=0)
-                        # print(vel[0])
-                        if vel[0] < 0.05 or vel[1] < 0.05:
+                        if self.__ground_contact(foot_pos, foot_pos2):
                             cv2.putText(frame.data(), "GROUND_CONTACT", (10, 120),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                        foot_pos = foot_pos2
                     end = time.time()
                     fps = 1 / (end - start)
                     cv2.putText(frame.data(), f'FPS: {fps:.2f}', (10, 60),
