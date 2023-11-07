@@ -70,7 +70,7 @@ class FrameBuffer():
                           {self.frame_count} - This might lead to race 
                           conditions!""", PotentialRaceConditionWarning)
         # self.frame_buffer = [None] * self.size
-        self.frame_buffer = np.empty((self.size, *self.frame_dims), dtype=np.uint8)
+        self.frame_buffer = np.empty((self.size, *self.frame_dims), dtype='u1')
         self.current_end = 0
         self.current_start = 0
         self.enable_lock = lock

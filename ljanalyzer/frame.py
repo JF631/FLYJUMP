@@ -33,6 +33,7 @@ class Frame():
         self.__right_knee_angle = 0.0
         self.__left_knee_angle = 0.0
         self.__hip_height = 0.0
+        self.__data = None
         self.foot_positions: tuple = None
         if frame is not None:
             self.update(frame)
@@ -40,7 +41,7 @@ class Frame():
     def __bool__(self):
         return self.__data is not None
 
-    def update(self, frame:np.ndarray):
+    def update(self, frame:np.ndarray)->None:
         '''
         replaces frame data in the current frame object.
 
@@ -50,14 +51,14 @@ class Frame():
             new frame of shape (height, width, channels)
         '''
         self.__data = frame
-    
+
     def clear(self):
         '''
         clears current frame.
         '''
         self.__data = None
 
-    def __calc_knee_angle(self, key_points: tuple):
+    def __calc_knee_angle(self, key_points: tuple)->float:
         '''
         calculates knee angle.
 
@@ -76,7 +77,7 @@ class Frame():
         hip, knee, foot = key_points
         hip_knee_vec = np.array(
             [
-                knee.x - hip.x, 
+                knee.x - hip.x,
                 knee.y - hip.y
             ], dtype='f4')
         knee_foot_vec = np.array(
@@ -105,11 +106,10 @@ class Frame():
         if not as_overlay:
             self.__data = np.zeros_like(self.__data)
         for pose in pose_landmarks:
-            self.foot_tip = pose[32]
             self.foot_positions = pose[-2:]
             self.__right_knee_angle = self.__calc_knee_angle(pose[24:30:2])
             self.__left_knee_angle = self.__calc_knee_angle(pose[23:29:2])
-            cv2.putText(self.__data, f"""right: {self.__right_knee_angle:.4f} 
+            cv2.putText(self.__data, f"""right: {self.__right_knee_angle:.4f}
                         left:{self.__left_knee_angle:.4f}""", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
             pose_proto = landmark_pb2.NormalizedLandmarkList()
@@ -154,10 +154,11 @@ class Frame():
         Returns
         -------
         knee_angles : np.ndarray
-            knee_angles[0]: right knee angle, knee_angles[1]: left knee angle´.
+            knee_angles[0]: right knee angle, knee_angles[1]: left knee angle.
         '''
-        return np.array([self.__right_knee_angle, self.__left_knee_angle])
-    
+        return np.array([self.__right_knee_angle, self.__left_knee_angle],
+            dtype='f4')
+
     def foot_pos(self):
         '''
         Foot position matrix.

@@ -8,18 +8,17 @@ Date: 2023-10-17
 import threading
 import os
 import time
-from math import sqrt
 
 import cv2
 from PyQt5.QtCore import QRunnable, QObject, pyqtSignal
 import numpy as np
 
+from utils.exception import FileNotFoundException, GeneralException
+from utils.controlsignals import SharedBool
 from .framebuffer import FrameBuffer
 from .frame import Frame
 from .posedetector import PoseDetector
 from .eval import Input, EvalType
-from utils.exception import FileNotFoundException, GeneralException
-from utils.controlsignals import SharedBool
 
 class VideoSignals(QObject):
     '''
@@ -75,7 +74,7 @@ class Video(QRunnable):
         self.__video_completed = threading.Event()
         self.abort = abort
         self.signals = VideoSignals()
-    
+
     def terminate(self)->None:
         '''
         Stop running analysis.
@@ -147,7 +146,7 @@ class Video(QRunnable):
                                                                self.dims[0]))
         playback = False
         lost_frames = 0
-        velocity_frames = 2 
+        velocity_frames = 2
         foot_pos = np.empty((2,2), dtype='f4')
         foot_pos2 = np.empty((2,2), dtype='f4')
         vel = np.empty((1,2), dtype='f4')
@@ -178,7 +177,7 @@ class Video(QRunnable):
                         vel = np.linalg.norm(foot_pos3, axis=0)
                         # print(vel[0])
                         if vel[0] < 0.05 or vel[1] < 0.05:
-                            cv2.putText(frame.data(), f'GROUND_CONTACT', (10, 120),
+                            cv2.putText(frame.data(), "GROUND_CONTACT", (10, 120),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                     end = time.time()
                     fps = 1 / (end - start)
@@ -200,13 +199,13 @@ class Video(QRunnable):
               ({lost_frames:.2f}%)""")
         self.signals.finished.emit()
         cv2.destroyAllWindows()
-        
+
     def update_progress(self, current_progress: int):
         '''
         Emits progress signal with current analysis progress in percent 
         '''
         self.signals.progress.emit(current_progress)
-    
+
     def run(self) -> None:
         '''
         Starts the body pose analyzing process on two threads.
@@ -223,6 +222,14 @@ class Video(QRunnable):
         visualize_thread.join()
 
     def get_filename(self)->str:
+        '''
+        Filename without path.
+
+        Returns
+        -------
+        filename : str
+            filename without whole path. (so e.g. just 'vid0.mp4')
+        '''
         return os.path.splitext(os.path.basename(self.__path))[0]
 
     def get_path(self)->str:
