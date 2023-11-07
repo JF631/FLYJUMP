@@ -3,3 +3,4 @@ numpy
 opencv-python
 psutil
 pyqt5
+h5py

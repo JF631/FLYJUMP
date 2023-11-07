@@ -15,6 +15,7 @@ import numpy as np
 
 from utils.exception import FileNotFoundException, GeneralException
 from utils.controlsignals import SharedBool
+from utils.filehandler import ParameterFile
 from .framebuffer import FrameBuffer
 from .frame import Frame
 from .posedetector import PoseDetector
@@ -157,9 +158,9 @@ class Video(QRunnable):
         velocity_frames = 2
         foot_pos = np.empty((2,2), dtype='f4')
         foot_pos2 = np.empty((2,2), dtype='f4')
-        vel = np.empty((1,2), dtype='f4')
         counter = 0
         frame = Frame()
+        param_file = ParameterFile(self.signals, self.get_filename())
         while True:
             if self.abort.get():
                 self.terminate()
@@ -175,6 +176,7 @@ class Video(QRunnable):
                 res = self.__detector.get_body_key_points(mp_image, counter)
                 if res.pose_landmarks:
                     frame.annotate(res.pose_landmarks, as_overlay=True)
+                    param_file.save(frame)
                     if counter == 0:
                         foot_pos = frame.foot_pos()
                     if (counter % velocity_frames) == 0:
@@ -227,12 +229,12 @@ class Video(QRunnable):
 
     def get_filename(self)->str:
         '''
-        Filename without path.
+        Filename without path and extension.
 
         Returns
         -------
         filename : str
-            filename without whole path. (so e.g. just 'vid0.mp4')
+            filename without extension and path. (so e.g. just 'vid0')
         '''
         return os.path.splitext(os.path.basename(self.__path))[0]
 
