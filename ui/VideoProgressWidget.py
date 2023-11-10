@@ -5,8 +5,8 @@ from ljanalyzer.video import VideoSignals
 class VideoProgessArea(QWidget):
     def __init__(self, parent: QWidget | None = ...) -> None:
         super().__init__(parent)
-        self.setMinimumSize(50 , 50)
-        self.setMaximumSize(200, 200)
+        # self.setMinimumSize(50 , 50)
+        # self.setMaximumSize(200, 200)
         self.initUI()
 
     def initUI(self):
