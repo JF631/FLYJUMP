@@ -109,6 +109,7 @@ class Frame():
             self.__data = np.zeros_like(self.__data)
         for pose in pose_landmarks:
             self.foot_positions = pose[-2:]
+            self.__hip_height = pose[24].y
             self.__right_knee_angle = self.__calc_knee_angle(pose[24:30:2])
             self.__left_knee_angle = self.__calc_knee_angle(pose[23:29:2])
             cv2.putText(self.__data, f"""right: {self.__right_knee_angle:.4f}
