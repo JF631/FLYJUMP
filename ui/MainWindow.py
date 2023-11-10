@@ -13,11 +13,12 @@ Author: Jakob Faust (software_jaf@mx442.de)
 Date: 2023-10-28
 '''
 
-from PyQt5.QtWidgets import QMainWindow, QFileDialog
+from PyQt5.QtWidgets import QMainWindow, QFileDialog, QVBoxLayout
 from PyQt5.QtCore import QThreadPool, pyqtSlot
 
 from .Ui_MainWindow import Ui_MainWindow
 from .VideoProgressWidget import VideoProgressBar, VideoProgessArea
+from .PlotWidget import PlotWidget
 from ljanalyzer.video import Video
 from utils.controlsignals import ControlSignals, SharedBool
 
@@ -40,7 +41,10 @@ class MainWindow(QMainWindow):
 
     def setupUi(self):
         self.progressbar_area = VideoProgessArea(self)
-        self.centralWidget().layout().addWidget(self.progressbar_area)
+        result_area_layout = QVBoxLayout(self.ui.result_area)
+        result_area_layout.addWidget(self.progressbar_area)
+        self.video_area = QVBoxLayout(self.ui.main_video)
+        # self.centralWidget().layout().addWidget(self.progressbar_area)
 
     @pyqtSlot()
     def choose_file_dialog(self):
@@ -60,6 +64,9 @@ class MainWindow(QMainWindow):
             video_task = Video(file_name, self.abort_flag)
             progress_widget = VideoProgressBar(video_task.get_filename(),
                                                video_task.signals)
+            plot_widget = PlotWidget(video_task.signals, self)
+            # self.progressbar_area.add_widget(plot_widget)
+            self.video_area.addWidget(plot_widget)
             self.progressbar_area.add_widget(progress_widget)
             self.thread_pool.start(video_task)
 
