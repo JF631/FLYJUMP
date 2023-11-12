@@ -6,8 +6,6 @@ Author: Jakob Faust (software_jaf@mx442.de)
 Date: 2023-10-22
 '''
 
-from typing import Union
-
 import cv2
 import mediapipe as mp
 from mediapipe import solutions
@@ -31,14 +29,16 @@ class Frame():
     frame.clear() before frame.update(new_frame) 
 
     '''
-    def __init__(self, frame:Union[np.ndarray, None] = ...) -> None:
+    def __init__(self, frame: np.ndarray = None) -> None:
         self.__right_knee_angle = 0.0
         self.__left_knee_angle = 0.0
         self.__hip_height = 0.0
         self.__data = None
         self.foot_positions: tuple = None
+        self.dims = (0, 0, 0) # (height, width, channels)
         if frame is not None:
             self.update(frame)
+            self.dims = self.__data.shape
 
     def __bool__(self):
         return self.__data is not None
@@ -53,6 +53,7 @@ class Frame():
             new frame of shape (height, width, channels)
         '''
         self.__data = frame
+        self.dims = self.__data.shape
 
     def clear(self):
         '''
@@ -140,6 +141,9 @@ class Frame():
         '''
         return mp.Image(image_format=mp.ImageFormat.SRGB,
                                     data=self.__data)
+
+    def to_rgb(self) -> np.ndarray:
+        return cv2.cvtColor(self.__data, cv2.COLOR_BGR2RGB)
 
     def data(self) -> np.ndarray:
         '''
