@@ -39,8 +39,8 @@ class PlotWidget(QWidget):
     def set_data(self, data: np.ndarray):
         if np.any(data < 0.0) or np.any(data > 1.0):
             return
-        self.r_foot_y = np.append(self.r_foot_y, data[1,0])
-        self.l_foot_y = np.append(self.l_foot_y, data[1,1])
+        self.l_foot_y = np.append(self.l_foot_y, data[1,0])
+        self.r_foot_y = np.append(self.r_foot_y, data[1,1])
         self.l_foot_curve.setData(np.arange(len(self.l_foot_y)), self.l_foot_y)
         self.r_foot_curve.setData(np.arange(len(self.r_foot_y)), self.r_foot_y)
 
