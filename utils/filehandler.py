@@ -94,7 +94,7 @@ class ParameterFile():
         print("saving last data..")
         self.__write_to_file()
         file_name = self.__filename + '.hdf5'
-        self.load(file_name)
+        # self.load(file_name)
   
     def load(self, path: str):
         right_foot_y = []
