@@ -42,6 +42,7 @@ class VideoSignals(QObject):
     finished = pyqtSignal()
     error = pyqtSignal()
     progress = pyqtSignal(int)
+    update_frame = pyqtSignal(Frame)
     update_frame_parameters = pyqtSignal(np.ndarray)
 
 class Video(QRunnable):
@@ -70,9 +71,9 @@ class Video(QRunnable):
         self.__open(path)
         self.__path = path
         self.__output_path = ''
-        self.__detector = PoseDetector(Input.VIDEO, EvalType.FULL)
+        self.__detector = PoseDetector(Input.VIDEO, EvalType.REALTIME)
         self.__frame_buffer = FrameBuffer(self.__frame_count, self.dims,
-                                          maxsize=1024, lock=True)
+                                          maxsize=2048, lock=True)
         self.__video_completed = threading.Event()
         self.abort = abort
         self.signals = VideoSignals()
@@ -173,8 +174,8 @@ class Video(QRunnable):
                 if frame is None:
                     print("Empty frame received")
                     break
-                mp_image = frame.to_mediapipe_image()
-                res = self.__detector.get_body_key_points(mp_image, counter)
+                res = self.__detector.get_body_key_points(
+                    frame.to_mediapipe_image(), counter)
                 if res.pose_landmarks:
                     frame.annotate(res.pose_landmarks, as_overlay=True)
                     param_file.save(frame)
@@ -188,9 +189,11 @@ class Video(QRunnable):
                         foot_pos = foot_pos2
                     end = time.time()
                     fps = 1 / (end - start)
-                    cv2.putText(frame.data(), f'FPS: {fps:.2f} frame: {counter}', (10, 60),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    cv2.putText(frame.data(), f'FPS: {fps:.2f} frame: {counter}',
+                                (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, 
+                                (0, 0, 255), 2)
                     self.signals.update_frame_parameters.emit((1 - foot_pos))
+                    self.signals.update_frame.emit(frame)
                     out.write(frame.data())
                 # cv2.imshow("TEST", frame)
                 counter += 1
