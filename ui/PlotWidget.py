@@ -6,6 +6,43 @@ import numpy as np
 
 from ljanalyzer.video import VideoSignals
 
+
+class MultiPlot(QWidget):
+    def __init__(self, signals:VideoSignals, num_plots:int = 1, 
+                 parent: QWidget | None = ...) -> None:
+        super().__init__(parent)
+        self.plot_widgets = []
+        self.video_signals = None
+        if signals:
+            self.connect_signals(signals)
+        self.initUI(num_plots)
+
+    def add_widget(self, widget: QWidget):
+        self.layout().addWidget(widget)
+
+    def create_subplot(self):
+        plt_widget = PlotWidget(self.video_signals, self.parent())
+        self.plot_widgets.append(plt_widget)
+        self.add_widget(plt_widget)
+
+    def initUI(self, num_plots:int):
+        self.setLayout(QVBoxLayout())
+        self.layout().setAlignment(Qt.AlignTop | Qt.AlignRight)
+        if not self.video_signals:
+            return
+        for _ in range(num_plots):
+            self.create_subplot(self.video_signals)
+
+    def connect_signals(self, signals: VideoSignals):
+        self.video_signals = signals
+
+    @pyqtSlot(np.ndarray)
+    def set_data(self, data: np.ndarray):
+        if np.any(data < 0.0) or np.any(data > 1.0):
+            return
+        self.plot_widgets[0].set_data()
+
+
 class PlotWidget(QWidget):
     def __init__(self, signals : VideoSignals, parent: QWidget | None = ...) -> None:
         super().__init__(parent)
