@@ -1,3 +1,5 @@
+import typing
+from PyQt5 import QtCore
 from PyQt5.QtGui import QPen
 from PyQt5.QtWidgets import QWidget, QVBoxLayout
 from PyQt5.QtCore import Qt, pyqtSlot
@@ -21,7 +23,7 @@ class MultiPlot(QWidget):
         self.layout().addWidget(widget)
 
     def create_subplot(self):
-        plt_widget = PlotWidget(self.video_signals, self.parent())
+        plt_widget = Plot(3, ["left foot", "right foot", "hip"], self.parent())
         self.plot_widgets.append(plt_widget)
         self.add_widget(plt_widget)
 
@@ -31,20 +33,82 @@ class MultiPlot(QWidget):
         if not self.video_signals:
             return
         for _ in range(num_plots):
-            self.create_subplot(self.video_signals)
+            self.create_subplot()
 
     def connect_signals(self, signals: VideoSignals):
         self.video_signals = signals
+        self.video_signals.update_frame_parameters.connect(self.set_data)
 
     @pyqtSlot(np.ndarray)
     def set_data(self, data: np.ndarray):
         if np.any(data < 0.0) or np.any(data > 1.0):
             return
-        self.plot_widgets[0].set_data()
+        self.plot_widgets[0].set_data(data[1])
+        
 
+class Plot(QWidget):
+    '''
+    class that offers convenient Qwt plot creation.
+    Multiple curves per plot are supported.
+    
+    Parameters
+    ----------
+    num_curves : int
+        number of data curves that should be emplaced in the plot
+    titles : list
+        holds title for each curve.
+        Must have the same length as num_curves
+    parent : QWidget
+        layout parent that holds the widget 
+    '''
+    def __init__(self,  num_curves: int = 1, titles: list = ["curve1"], 
+                 parent: QWidget | None = ...) -> None:
+        super().__init__(parent)
+        assert(len(titles) == num_curves)
+        self.plot = QwtPlot(self)
+        self.legend = QwtLegend()
+        self.max_rows = 128
+        self.current_row = 0
+        self.data = np.empty((self.max_rows, num_curves), dtype='f4')
+        self.plot.insertLegend(self.legend, QwtPlot.BottomLegend)
+        self.curves: QwtPlotCurve = []
+        for title in titles:
+            curve = QwtPlotCurve(title)
+            self.curves.append(curve)
+            curve.attach(self.plot)
+        
+        layout = QVBoxLayout()
+        layout.addWidget(self.plot)
+        self.setLayout(layout)
+
+    def set_data(self, data: np.ndarray):
+        '''
+        updates all curves in current plot.
+        
+        Parameters
+        -----------
+        data : np.ndarray
+            flat array of shape (1, num_curves).
+            Each colum must hold the new data for one curve. 
+        '''
+        columns = self.data.shape[1]
+        assert(data.shape[0] == columns)
+        if self.current_row + 1 >= self.data.shape[0]:
+            self.max_rows *= 2
+            self.data.resize((self.max_rows, columns))
+        self.data[self.current_row] = data
+        self.current_row += 1
+        
+        for i, curve in enumerate(self.curves):
+            curve.setData(np.arange(self.current_row), self.data[:,i])
+            
+        self.plot.setAxisAutoScale(QwtPlot.xBottom)
+        self.plot.setAxisAutoScale(QwtPlot.yLeft)
+        self.plot.replot()
 
 class PlotWidget(QWidget):
-    def __init__(self, signals : VideoSignals, parent: QWidget | None = ...) -> None:
+    def __init__(self, signals : VideoSignals, 
+                 parent: QWidget | None = ...) -> None:
         super().__init__(parent)
         signals.update_frame_parameters.connect(self.set_data)
         # Create a QwtPlot widget
