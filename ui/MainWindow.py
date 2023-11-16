@@ -19,7 +19,7 @@ from PyQt5.QtCore import QThreadPool, pyqtSlot
 
 from .Ui_MainWindow import Ui_MainWindow
 from .VideoProgressWidget import VideoProgressBar, VideoProgessArea
-from .PlotWidget import PlotWidget
+from .PlotWidget import PlotWidget, MultiPlot
 from .VideoWidget import VideoWidget
 from ljanalyzer.video import Video
 from utils.controlsignals import ControlSignals, SharedBool
@@ -60,9 +60,10 @@ class MainWindow(QMainWindow):
             video_task = Video(file_name, self.abort_flag)
             progress_widget = VideoProgressBar(video_task.get_filename(),
                                                video_task.signals)
+            multi_plot = MultiPlot(video_task.signals, 1, self.ui.result_area)
             plot_widget = PlotWidget(video_task.signals, self.ui.result_area)
             self.video_widget.connect_signals(video_task.signals)
-            self.progressbar_area.add_widget(plot_widget)
+            self.progressbar_area.add_widget(multi_plot)
             self.progressbar_area.add_widget(progress_widget)
             self.thread_pool.start(video_task)
 
