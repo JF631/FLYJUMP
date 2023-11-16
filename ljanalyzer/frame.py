@@ -32,7 +32,7 @@ class Frame():
     def __init__(self, frame: np.ndarray = None) -> None:
         self.__right_knee_angle = 0.0
         self.__left_knee_angle = 0.0
-        self.__hip_height = 0.0
+        self.__hip_position = np.empty(2)
         self.__data = None
         self.foot_positions: tuple = None
         self.dims = (0, 0, 0) # (height, width, channels)
@@ -110,7 +110,7 @@ class Frame():
             self.__data = np.zeros_like(self.__data)
         for pose in pose_landmarks:
             self.foot_positions = pose[-2:]
-            self.__hip_height = pose[24].y
+            self.__hip_position = np.array([pose[24].x, pose[24].y])
             self.__right_knee_angle = self.__calc_knee_angle(pose[24:30:2])
             self.__left_knee_angle = self.__calc_knee_angle(pose[23:29:2])
             cv2.putText(self.__data, f"""right: {self.__right_knee_angle:.4f}
@@ -192,6 +192,16 @@ class Frame():
         Returns
         -------
         centroid_height : float
-            relative height of body centroid in current frame. 
+            normalized height of body centroid in current frame. 
         '''
-        return self.__hip_height
+        return self.__hip_position[1]
+    
+    def hip_pos(self)->np.ndarray:
+        '''
+        Returns
+        -------
+        hip_position : np.ndarray
+            normalized hip position in current frame.
+            [hip.x, hip.y]
+        '''
+        return self.__hip_position
