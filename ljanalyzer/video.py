@@ -192,7 +192,8 @@ class Video(QRunnable):
                     cv2.putText(frame.data(), f'FPS: {fps:.2f} frame: {counter}',
                                 (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, 
                                 (0, 0, 255), 2)
-                    self.signals.update_frame_parameters.emit((1 - foot_pos))
+                    frame_params = np.hstack((foot_pos, frame.hip_pos().reshape(-1, 1)))
+                    self.signals.update_frame_parameters.emit((1 - frame_params))
                     self.signals.update_frame.emit(frame)
                     out.write(frame.data())
                 # cv2.imshow("TEST", frame)
