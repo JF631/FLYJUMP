@@ -10,20 +10,40 @@ import os
 import time
 
 import cv2
-from PyQt5.QtCore import QRunnable
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QRunnable, QObject, pyqtSignal
+import numpy as np
 
+from utils.exception import FileNotFoundException, GeneralException
+from utils.controlsignals import SharedBool
+from utils.filehandler import ParameterFile
 from .framebuffer import FrameBuffer
 from .frame import Frame
 from .posedetector import PoseDetector
 from .eval import Input, EvalType
-from utils.exception import FileNotFoundException, GeneralException
-from utils.controlsignals import ControlSignals
 
 class VideoSignals(QObject):
+    '''
+    Defines PyQt Signals that can be emmitted by a video object.
+    
+    Connect to these signals to handle following events.
+
+    Signals
+    -------
+    finished : pyqtSignal
+        indicates that the video analysis for this object has finished
+        (also emitted when process is terminated!)
+    error : pyqtSignal
+        emmitted when an error occured during the analysis process
+    progress : pyqtSignal(int)
+        publishes the current progress for the video object to keep track of 
+        analysis progress in range [0 - 100] % (e.g. for progressbars)  
+
+    '''
     finished = pyqtSignal()
     error = pyqtSignal()
     progress = pyqtSignal(int)
+    update_frame = pyqtSignal(Frame)
+    update_frame_parameters = pyqtSignal(np.ndarray)
 
 class Video(QRunnable):
     '''
@@ -43,7 +63,7 @@ class Video(QRunnable):
     path : str
         path to video file.
     '''
-    def __init__(self, path:str, control_signals: ControlSignals) -> None:
+    def __init__(self, path:str, abort: SharedBool) -> None:
         super().__init__()
         self.__frame_count = 0
         self.__frame_rate = 0
@@ -51,13 +71,27 @@ class Video(QRunnable):
         self.__open(path)
         self.__path = path
         self.__output_path = ''
-        self.__detector = PoseDetector(Input.VIDEO, EvalType.FULL)
+        self.__detector = PoseDetector(Input.VIDEO, EvalType.REALTIME)
         self.__frame_buffer = FrameBuffer(self.__frame_count, self.dims,
                                           maxsize=2048, lock=True)
         self.__video_completed = threading.Event()
-        self.abort = False
+        self.abort = abort
         self.signals = VideoSignals()
-        control_signals.terminate.connect(self.terminate)
+
+    def terminate(self)->None:
+        '''
+        Stop running analysis.
+        '''
+        print("trying to abort analysis")
+        self.signals.finished.emit()
+    
+    def __ground_contact(self, prev_foot_pos: np.ndarray, 
+                         curr_foot_pos:np.ndarray):
+        frames_to_consider = 2
+        diff = curr_foot_pos - prev_foot_pos
+        diff /= (frames_to_consider / self.__frame_rate)
+        vel = np.linalg.norm(diff, axis=0)
+        return np.any(vel < 0.1)
 
     def __open(self, path:str):
         '''
@@ -92,8 +126,9 @@ class Video(QRunnable):
         '''
         cap = cv2.VideoCapture(self.__path)
         while cap.isOpened():
-            if self.abort:
-                break
+            if self.abort.get():
+                self.terminate()
+                return
             valid, frame = cap.read()
             if not valid:
                 self.__video_completed.set()
@@ -112,55 +147,77 @@ class Video(QRunnable):
         Runs pose detection on frames from the frame buffer and writes the
         result to a video file.
         '''
-        input_file_name = os.path.splitext(os.path.basename(self.__path))[0]
         self.__output_path = os.path.dirname(__file__)
         self.__output_path = os.path.join(
             self.__output_path,
-            f'../output/{input_file_name}_analyzed.mp4'
+            f'../output/{self.get_filename()}_analyzed.mp4'
         )
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
         out = cv2.VideoWriter(self.__output_path, fourcc, 30, (self.dims[1],
                                                                self.dims[0]))
         playback = False
         lost_frames = 0
+        velocity_frames = 2
+        foot_pos = np.empty((2,2), dtype='f4')
+        foot_pos2 = np.empty((2,2), dtype='f4')
         counter = 0
+        frame = Frame()
+        param_file = ParameterFile(self.signals, self.get_filename())
         while True:
-            if self.abort:
+            if self.abort.get():
+                self.terminate()
                 break
             if self.__frame_buffer.current_frames() > 0:
                 start = time.time()
-                frame = Frame(self.__frame_buffer.pop())
+                frame.update(self.__frame_buffer.pop())
                 playback = True
                 if frame is None:
                     print("Empty frame received")
                     break
-                counter += 1
-                self.update_progress(int((counter / self.__frame_count) * 100))
-                mp_image = frame.to_mediapipe_image()
-                res = self.__detector.get_body_key_points(mp_image, counter)
+                res = self.__detector.get_body_key_points(
+                    frame.to_mediapipe_image(), counter)
                 if res.pose_landmarks:
-                    frame.annotate(res.pose_landmarks, as_overlay=False)
+                    frame.annotate(res.pose_landmarks, as_overlay=True)
+                    param_file.save(frame)
+                    if counter == 0:
+                        foot_pos = frame.foot_pos()
+                    if (counter % velocity_frames) == 0:
+                        foot_pos2 = frame.foot_pos()
+                        if self.__ground_contact(foot_pos, foot_pos2):
+                            cv2.putText(frame.data(), "GROUND_CONTACT", (10, 120),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                        foot_pos = foot_pos2
                     end = time.time()
                     fps = 1 / (end - start)
-                    cv2.putText(frame.data(), f'FPS: {fps:.2f}', (10, 60),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    cv2.putText(frame.data(), f'FPS: {fps:.2f} frame: {counter}',
+                                (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, 
+                                (0, 0, 255), 2)
+                    frame_params = np.hstack((foot_pos, frame.hip_pos().reshape(-1, 1)))
+                    self.signals.update_frame_parameters.emit((1 - frame_params))
+                    self.signals.update_frame.emit(frame)
                     out.write(frame.data())
                 # cv2.imshow("TEST", frame)
+                counter += 1
+                self.update_progress(int((counter / self.__frame_count) * 100))
                 if cv2.waitKey(0) & 0xFF == ord('q'):
                     break
             elif playback and self.__video_completed.is_set():
                 break
         out.release()
+        frame.clear()
         lost_frames = (1 - (counter / self.__frame_count)) * 100
         print(f"""video {self.__path} analyzed \n
               lost frames: {self.__frame_count - counter} 
               ({lost_frames:.2f}%)""")
         self.signals.finished.emit()
         cv2.destroyAllWindows()
-        
+
     def update_progress(self, current_progress: int):
+        '''
+        Emits progress signal with current analysis progress in percent 
+        '''
         self.signals.progress.emit(current_progress)
-    
+
     def run(self) -> None:
         '''
         Starts the body pose analyzing process on two threads.
@@ -175,11 +232,17 @@ class Video(QRunnable):
         visualize_thread.start()
         load_thread.join()
         visualize_thread.join()
-    
-    def terminate(self):
-        print("aborting analysis")
-        self.signals.finished.emit()
-        self.abort = True
+
+    def get_filename(self)->str:
+        '''
+        Filename without path and extension.
+
+        Returns
+        -------
+        filename : str
+            filename without extension and path. (so e.g. just 'vid0')
+        '''
+        return os.path.splitext(os.path.basename(self.__path))[0]
 
     def get_path(self)->str:
         '''

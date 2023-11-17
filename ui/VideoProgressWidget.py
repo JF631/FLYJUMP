@@ -1,12 +1,12 @@
 from PyQt5.QtWidgets import QWidget, QLabel, QProgressBar, QVBoxLayout
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSlot
 from ljanalyzer.video import VideoSignals
 
 class VideoProgessArea(QWidget):
     def __init__(self, parent: QWidget | None = ...) -> None:
         super().__init__(parent)
-        self.setMinimumSize(50 , 50)
-        self.setMaximumSize(200, 200)
+        # self.setMinimumSize(50 , 50)
+        # self.setMaximumSize(200, 200)
         self.initUI()
 
     def initUI(self):
@@ -23,7 +23,7 @@ class VideoProgressBar(QWidget):
         self.initUI()
         signals.progress.connect(self.update_progressbar)
         signals.finished.connect(self.delete_progress_bar)
-        
+
     def initUI(self):
         layout = QVBoxLayout()
         self.bar_label = QLabel(self.identifier)
@@ -33,10 +33,12 @@ class VideoProgressBar(QWidget):
         layout.addWidget(self.bar_label)
         layout.addWidget(self.progressbar)
         self.setLayout(layout)
-        
+
+    @pyqtSlot(int)
     def update_progressbar(self, value: int):
         self.progressbar.setValue(value)
-        
+
+    @pyqtSlot()
     def delete_progress_bar(self):
         parent_layout = self.parentWidget().layout()
         parent_layout.removeWidget(self)

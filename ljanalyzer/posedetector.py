@@ -11,8 +11,8 @@ import os
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-from .eval import EvalType, Input
 from utils.exception import FileNotFoundException
+from .eval import EvalType, Input
 
 class PoseDetector:
     '''
@@ -52,7 +52,7 @@ class PoseDetector:
             can simply be the frame number when using a video file.
 
         '''
-        rtrn = 0
+        rtrn = None
         if self.input_type == Input.IMAGE:
             rtrn = self.pose_detector.detect_for_image(image)
         if self.input_type == Input.VIDEO:
@@ -61,7 +61,7 @@ class PoseDetector:
             rtrn = self.pose_detector.detect_async(image, timestamp)
         return rtrn
 
-    def get_config(self):
+    def get_config(self)->tuple:
         '''
         Returns a tuple of the current configuration.
 
@@ -73,21 +73,21 @@ class PoseDetector:
         '''
         return self.input_type.name, self.eval_type.name
 
-    def get_input_type(self):
+    def get_input_type(self)->str:
         '''
         Returns the current input type.
         (IMAGE, VIDEO or LIVESTREAM)
         '''
         return self.input_type.name
 
-    def get_eval_type(self):
+    def get_eval_type(self)->str:
         '''
         Returns the current evaluation type.
         (REALTIME, NEAR_REALTIME or FULL)
         '''
         return self.eval_type.name
 
-    def __init_pose_detector(self):
+    def __init_pose_detector(self)->None:
         current_path = os.path.dirname(__file__)
         print(current_path)
         if self.eval_type == EvalType.REALTIME:
