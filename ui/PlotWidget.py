@@ -1,5 +1,3 @@
-import typing
-from PyQt5 import QtCore
 from PyQt5.QtGui import QPen
 from PyQt5.QtWidgets import QWidget, QVBoxLayout
 from PyQt5.QtCore import Qt, pyqtSlot
@@ -10,8 +8,25 @@ from ljanalyzer.video import VideoSignals
 
 
 class MultiPlot(QWidget):
-    def __init__(self, signals:VideoSignals, num_plots:int = 1, 
-                 parent: QWidget | None = ...) -> None:
+    '''
+    class that offers convenient Multi Qwt plot creation.
+    Multiple plots per widget are supported.
+    Each plot can again hold multiple curves.
+    
+    Parameters
+    ----------
+    num_plots : int
+        number of plot widgets that should be emplaced in the multiplot widget
+    plot_descr : dict
+        holds discripition for each plot.
+        Must be build like {"plot_ind":["curve_title0", "curve_titile1", ...]}.
+        plot_ind is expected to be in range [0, num_plots).
+        CAUTION: A name for each curve in a plot must be given!
+    parent : QWidget
+        layout parent that holds the widget 
+    '''
+    def __init__(self, signals:VideoSignals, num_plots:int = 1,
+                 curves : dict = {}, parent: QWidget | None = ...) -> None:
         super().__init__(parent)
         self.plot_widgets = []
         self.video_signals = None
@@ -43,7 +58,7 @@ class MultiPlot(QWidget):
     def set_data(self, data: np.ndarray):
         if np.any(data < 0.0) or np.any(data > 1.0):
             return
-        self.plot_widgets[0].set_data(data[1])
+        self.plot_widgets[0].set_data(data)
         
 
 class Plot(QWidget):
@@ -84,24 +99,24 @@ class Plot(QWidget):
     def set_data(self, data: np.ndarray):
         '''
         updates all curves in current plot.
+        The x values are expected to be in time domain and are automatically 
+        set.
         
         Parameters
         -----------
         data : np.ndarray
-            flat array of shape (1, num_curves).
-            Each colum must hold the new data for one curve. 
+            matrix of shape (values_to_add, num_curves).
+            Each colum thereby must hold new data for one curve. 
         '''
         columns = self.data.shape[1]
-        assert(data.shape[0] == columns)
-        if self.current_row + 1 >= self.data.shape[0]:
+        num_new_values = data.shape[0]
+        if self.current_row + num_new_values >= self.data.shape[0]:
             self.max_rows *= 2
             self.data.resize((self.max_rows, columns))
-        self.data[self.current_row] = data
-        self.current_row += 1
-        
+        self.data[[self.current_row, self.current_row + num_new_values]] = data
+        self.current_row += num_new_values
         for i, curve in enumerate(self.curves):
             curve.setData(np.arange(self.current_row), self.data[:,i])
-            
         self.plot.setAxisAutoScale(QwtPlot.xBottom)
         self.plot.setAxisAutoScale(QwtPlot.yLeft)
         self.plot.replot()

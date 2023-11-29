@@ -12,8 +12,6 @@ Ui Files for this Window:
 Author: Jakob Faust (software_jaf@mx442.de)
 Date: 2023-10-28
 '''
-import warnings
-
 from PyQt5.QtWidgets import QMainWindow, QFileDialog, QVBoxLayout
 from PyQt5.QtCore import QThreadPool, pyqtSlot
 
@@ -60,8 +58,9 @@ class MainWindow(QMainWindow):
             video_task = Video(file_name, self.abort_flag)
             progress_widget = VideoProgressBar(video_task.get_filename(),
                                                video_task.signals)
-            multi_plot = MultiPlot(video_task.signals, 1, self.ui.result_area)
-            plot_widget = PlotWidget(video_task.signals, self.ui.result_area)
+            multi_plot = MultiPlot(signals=video_task.signals, num_plots=1, 
+                                   parent=self.ui.result_area)
+            # plot_widget = PlotWidget(video_task.signals, self.ui.result_area)
             self.video_widget.connect_signals(video_task.signals)
             self.progressbar_area.add_widget(multi_plot)
             self.progressbar_area.add_widget(progress_widget)
