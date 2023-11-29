@@ -192,7 +192,10 @@ class Video(QRunnable):
                     cv2.putText(frame.data(), f'FPS: {fps:.2f} frame: {counter}',
                                 (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, 
                                 (0, 0, 255), 2)
-                    frame_params = np.hstack((foot_pos, frame.hip_pos().reshape(-1, 1)))
+                    frame_params = np.hstack((
+                        foot_pos[1], #foot height
+                        frame.hip_pos().reshape(-1, 1)[1]) # hip height
+                    ).reshape(1, -1) #expected to have at least one row
                     self.signals.update_frame_parameters.emit((1 - frame_params))
                     self.signals.update_frame.emit(frame)
                     out.write(frame.data())
