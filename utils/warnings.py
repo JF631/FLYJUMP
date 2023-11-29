@@ -4,8 +4,6 @@ Module that provides several custom warnings.
 Author: Jakob Faust (software_jaf@mx442.de)
 Date: 2023-10-124
 '''
-import warnings
-warnings.filterwarnings("always")
 from PyQt5.QtWidgets import QDialog, QLabel, QVBoxLayout, QDialogButtonBox
 
 class PotentialRaceConditionWarning(ResourceWarning):
