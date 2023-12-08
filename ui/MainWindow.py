@@ -54,11 +54,13 @@ class MainWindow(QMainWindow):
             return
         if not self.video_widget:
             return
+        plot_descr = {"Height": ["left foot", "right foot", "hip"], "ANgle":["1", "2"]}
         for file_name in file_names:
             video_task = Video(file_name, self.abort_flag)
             progress_widget = VideoProgressBar(video_task.get_filename(),
                                                video_task.signals)
-            multi_plot = MultiPlot(signals=video_task.signals, num_plots=1, 
+            multi_plot = MultiPlot(signals=video_task.signals, num_plots=2,
+                                   curves=plot_descr,
                                    parent=self.ui.result_area)
             # plot_widget = PlotWidget(video_task.signals, self.ui.result_area)
             self.video_widget.connect_signals(video_task.signals)

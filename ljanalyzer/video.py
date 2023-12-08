@@ -193,10 +193,12 @@ class Video(QRunnable):
                                 (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, 
                                 (0, 0, 255), 2)
                     frame_params = np.hstack((
-                        foot_pos[1], #foot height
-                        frame.hip_pos().reshape(-1, 1)[1]) # hip height
+                        1 - foot_pos[1], #foot height
+                        1 - frame.hip_pos().reshape(-1, 1)[1], # hip height
+                        frame.knee_angles())
                     ).reshape(1, -1) #expected to have at least one row
-                    self.signals.update_frame_parameters.emit((1 - frame_params))
+                    # print(frame_params)
+                    self.signals.update_frame_parameters.emit(frame_params)
                     self.signals.update_frame.emit(frame)
                     out.write(frame.data())
                 # cv2.imshow("TEST", frame)

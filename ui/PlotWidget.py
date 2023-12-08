@@ -30,25 +30,26 @@ class MultiPlot(QWidget):
         super().__init__(parent)
         self.plot_widgets = []
         self.video_signals = None
+        self.curves = curves
         if signals:
             self.connect_signals(signals)
-        self.initUI(num_plots)
+        self.initUI()
 
     def add_widget(self, widget: QWidget):
         self.layout().addWidget(widget)
 
-    def create_subplot(self):
-        plt_widget = Plot(3, ["left foot", "right foot", "hip"], self.parent())
+    def create_subplot(self, plot_title, num_curves, curve_titles):
+        plt_widget = Plot(plot_title, num_curves, curve_titles, self.parent())
         self.plot_widgets.append(plt_widget)
         self.add_widget(plt_widget)
 
-    def initUI(self, num_plots:int):
+    def initUI(self):
         self.setLayout(QVBoxLayout())
         self.layout().setAlignment(Qt.AlignTop | Qt.AlignRight)
         if not self.video_signals:
             return
-        for _ in range(num_plots):
-            self.create_subplot()
+        for plot_title, curve_titles in self.curves.items():
+            self.create_subplot(plot_title, len(curve_titles), curve_titles)
 
     def connect_signals(self, signals: VideoSignals):
         self.video_signals = signals
@@ -56,9 +57,16 @@ class MultiPlot(QWidget):
 
     @pyqtSlot(np.ndarray)
     def set_data(self, data: np.ndarray):
-        if np.any(data < 0.0) or np.any(data > 1.0):
-            return
-        self.plot_widgets[0].set_data(data)
+        # if np.any(data < 0.0):
+        #     return
+        curve_offset = 0
+        for plot in self.plot_widgets:
+            if np.any(data < 0.0):
+                return
+            plot_curves = plot.num_curves
+            plot.set_data(data[:, curve_offset:curve_offset + plot_curves])
+            curve_offset += plot_curves
+        # self.plot_widgets[0].set_data(data)
         
 
 class Plot(QWidget):
@@ -76,18 +84,21 @@ class Plot(QWidget):
     parent : QWidget
         layout parent that holds the widget 
     '''
-    def __init__(self,  num_curves: int = 1, titles: list = ["curve1"], 
+    def __init__(self, title : str = "", num_curves: int = 1, 
+                 curve_titles: list = ["curve1"],
                  parent: QWidget | None = ...) -> None:
         super().__init__(parent)
-        assert(len(titles) == num_curves)
+        assert(len(curve_titles) == num_curves)
         self.plot = QwtPlot(self)
         self.legend = QwtLegend()
         self.max_rows = 128
         self.current_row = 0
+        self.num_curves = num_curves
         self.data = np.empty((self.max_rows, num_curves), dtype='f4')
         self.plot.insertLegend(self.legend, QwtPlot.BottomLegend)
+        self.plot.setTitle(title)
         self.curves: QwtPlotCurve = []
-        for title in titles:
+        for title in curve_titles:
             curve = QwtPlotCurve(title)
             self.curves.append(curve)
             curve.attach(self.plot)
