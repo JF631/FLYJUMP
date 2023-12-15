@@ -6,6 +6,7 @@ Date: 2023-11-07
 '''
 
 import os
+from datetime import datetime
 
 import h5py
 
@@ -18,9 +19,9 @@ class ParameterFile():
         self.__frame_data = {}
         self.__frame_count = 0
         self.__batchsize = 128
-        self.__filename = os.path.dirname(__file__)
+        self.__filename = FileHandler.create_current_folder()
         self.__filename = os.path.join(self.__filename, 
-                                       f'../output/{file_name}')
+                                       f'{file_name}')
         signals.finished.connect(self.__save_last)
 
     def __add_to_dict(self, frame: Frame):
@@ -83,7 +84,7 @@ class ParameterFile():
         '''
         self.__add_to_dict(frame)
         if self.__frame_count % self.__batchsize == 0:
-            self.__write_to_file() 
+            self.__write_to_file()
 
     def __save_last(self):
         '''
@@ -126,3 +127,28 @@ class ParameterFile():
         file_name = self.__filename + '.png'
         plt.savefig(file_name)
         # plt.show()
+
+class FileHandler():
+    __OUTPUT_FOLDER = "analysis"
+    def __init__(self) -> None:
+        pass
+
+    def create_general_structure() -> bool:
+        '''
+        creates "analysis" folder, that later holds all analysis outputs.
+        '''
+        analysis_output = os.path.join(os.getcwd(), 
+                                       FileHandler.__OUTPUT_FOLDER)
+        if not os.path.exists(analysis_output):
+            os.makedirs(analysis_output)
+
+    def get_output_path() -> str:
+        return os.path.join(os.getcwd(), FileHandler.__OUTPUT_FOLDER)
+    
+    def create_current_folder() -> str:
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        path = os.path.join(os.getcwd(), FileHandler.__OUTPUT_FOLDER
+                            + f'/{current_date}')
+        if not os.path.exists(path):
+            os.makedirs(path)
+        return path

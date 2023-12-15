@@ -17,10 +17,11 @@ from PyQt5.QtCore import QThreadPool, pyqtSlot
 
 from .Ui_MainWindow import Ui_MainWindow
 from .VideoProgressWidget import VideoProgressBar, VideoProgessArea
-from .PlotWidget import PlotWidget, MultiPlot
+from .PlotWidget import MultiPlot
 from .VideoWidget import VideoWidget
 from ljanalyzer.video import Video
 from utils.controlsignals import ControlSignals, SharedBool
+from utils.filehandler import FileHandler
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -34,8 +35,11 @@ class MainWindow(QMainWindow):
         self.ui.action_choose_video_file.triggered.connect(
             self.choose_file_dialog)
         self.thread_pool = QThreadPool.globalInstance()
-        # limit used cpu cores to half of available cores.
-        # This is because usually one video analysis uses two cores.  
+        FileHandler.create_general_structure()
+        '''
+        limit used cpu cores to half of available cores.
+        This is because usually one video analysis uses two cores.
+        '''
         self.thread_pool.setMaxThreadCount(
             int(self.thread_pool.maxThreadCount() / 2)
         )
@@ -54,17 +58,21 @@ class MainWindow(QMainWindow):
             return
         if not self.video_widget:
             return
-        plot_descr = {"Height": ["left foot", "right foot", "hip"], "ANgle":["1", "2"]}
+        show_video = True
+        if len(file_names) > 1:
+            show_video = False
+        plot_descr = {"Height": ["left foot", "right foot", "hip"],
+                      "Angle":["right knee", "left knee"]}
         for file_name in file_names:
             video_task = Video(file_name, self.abort_flag)
             progress_widget = VideoProgressBar(video_task.get_filename(),
                                                video_task.signals)
-            multi_plot = MultiPlot(signals=video_task.signals, num_plots=2,
-                                   curves=plot_descr,
-                                   parent=self.ui.result_area)
-            # plot_widget = PlotWidget(video_task.signals, self.ui.result_area)
-            self.video_widget.connect_signals(video_task.signals)
-            self.progressbar_area.add_widget(multi_plot)
+            if show_video:
+                multi_plot = MultiPlot(signals=video_task.signals,
+                                       num_plots=2, curves=plot_descr,
+                                       parent=self.ui.result_area)
+                self.video_widget.connect_signals(video_task.signals)
+                self.progressbar_area.add_widget(multi_plot)
             self.progressbar_area.add_widget(progress_widget)
             self.thread_pool.start(video_task)
 
@@ -80,7 +88,7 @@ class MainWindow(QMainWindow):
             'Video Files (*.mp4 *.avi *.mkv *.mov);;All Files (*)',
             options=dialog_options
         )
-        self.__start_video_analaysis(file_names) 
+        self.__start_video_analaysis(file_names)
 
     def closeEvent(self, event) -> None:
         self.abort_flag.set()

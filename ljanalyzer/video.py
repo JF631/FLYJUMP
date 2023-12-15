@@ -15,7 +15,7 @@ import numpy as np
 
 from utils.exception import FileNotFoundException, GeneralException
 from utils.controlsignals import SharedBool
-from utils.filehandler import ParameterFile
+from utils.filehandler import ParameterFile, FileHandler
 from .framebuffer import FrameBuffer
 from .frame import Frame
 from .posedetector import PoseDetector
@@ -31,13 +31,29 @@ class VideoSignals(QObject):
     -------
     finished : pyqtSignal
         indicates that the video analysis for this object has finished
-        (also emitted when process is terminated!)
+        (also emitted when process is terminated!).
     error : pyqtSignal
-        emmitted when an error occured during the analysis process
+        emmitted when an error occured during the analysis process.
     progress : pyqtSignal(int)
         publishes the current progress for the video object to keep track of 
-        analysis progress in range [0 - 100] % (e.g. for progressbars)  
-
+        analysis progress in range [0 - 100] % (e.g. for progressbars).
+    update_frame : pyqtSignal(Frame)
+        publishes current frame.
+        Currently it is used to display the frame during the analysis process.
+    update_frame_parameters(np.ndarray)
+        publishes all analyzed data for the current frame.
+        This is currently be used for visualization.
+        Each column represents data that should be added to a plot 
+        for one graph.
+        Example:
+        [
+            [a11, a12, a13],
+            [a21, a22, a23],
+            [a31, a32, a33]      
+        ]
+              ^    ^    ^
+        In the example above [a11, a21, a31] will be added to the first plot, 
+        first graph.
     '''
     finished = pyqtSignal()
     error = pyqtSignal()
@@ -147,10 +163,10 @@ class Video(QRunnable):
         Runs pose detection on frames from the frame buffer and writes the
         result to a video file.
         '''
-        self.__output_path = os.path.dirname(__file__)
+        self.__output_path = FileHandler.create_current_folder()
         self.__output_path = os.path.join(
             self.__output_path,
-            f'../output/{self.get_filename()}_analyzed.mp4'
+            f'{self.get_filename()}_analyzed.mp4'
         )
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
         out = cv2.VideoWriter(self.__output_path, fourcc, 30, (self.dims[1],
@@ -181,11 +197,14 @@ class Video(QRunnable):
                     param_file.save(frame)
                     if counter == 0:
                         foot_pos = frame.foot_pos()
+                        if np.any(foot_pos > 1.0) or np.any(foot_pos < 0.0):
+                            continue
                     if (counter % velocity_frames) == 0:
                         foot_pos2 = frame.foot_pos()
                         if self.__ground_contact(foot_pos, foot_pos2):
-                            cv2.putText(frame.data(), "GROUND_CONTACT", (10, 120),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                            cv2.putText(frame.data(), "GROUND_CONTACT",
+                                        (10, 120), cv2.FONT_HERSHEY_SIMPLEX,
+                                        1, (0, 0, 255), 2)
                         foot_pos = foot_pos2
                     end = time.time()
                     fps = 1 / (end - start)
@@ -197,11 +216,9 @@ class Video(QRunnable):
                         1 - frame.hip_pos().reshape(-1, 1)[1], # hip height
                         frame.knee_angles())
                     ).reshape(1, -1) #expected to have at least one row
-                    # print(frame_params)
                     self.signals.update_frame_parameters.emit(frame_params)
                     self.signals.update_frame.emit(frame)
                     out.write(frame.data())
-                # cv2.imshow("TEST", frame)
                 counter += 1
                 self.update_progress(int((counter / self.__frame_count) * 100))
                 if cv2.waitKey(0) & 0xFF == ord('q'):
