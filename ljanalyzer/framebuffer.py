@@ -63,7 +63,8 @@ class FrameBuffer():
         self.frame_count = frame_count
         self.size = self.__ensure_memory(self.max_size)
         self.warning_dialog = WarningDialog()
-        warnings.showwarning = self.warning_dialog.show_warning
+        # warnings.showwarning = self.warning_dialog.show_warning
+        warnings.simplefilter("always", PotentialRaceConditionWarning)
         if self.size < self.frame_count and not lock:
             warnings.warn(f"""Buffer lock is disabled and buffer size
                           {self.size} is smaller than the frame count

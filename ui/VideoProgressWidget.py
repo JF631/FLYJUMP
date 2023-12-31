@@ -15,6 +15,14 @@ class VideoProgessArea(QWidget):
 
     def add_widget(self, widget: QWidget):
         self.layout().addWidget(widget)
+    
+    def clear(self):
+        while self.layout().count():
+            curr_item = self.layout().takeAt(0)
+            curr_widget = curr_item.widget()
+            if curr_widget:
+                curr_widget.setParent(None)
+                curr_widget.deleteLater()
 
 class VideoProgressBar(QWidget):
     def __init__(self, identifier: str, signals: VideoSignals) -> None:

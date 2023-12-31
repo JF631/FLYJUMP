@@ -6,6 +6,7 @@ Date: 2023-11-07
 '''
 
 import os
+from datetime import datetime
 
 import h5py
 
@@ -14,13 +15,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 class ParameterFile():
+    '''
+    A parameter file holds analysis results for each frame.
+    It is saved on disk as hdf5 file.
+    '''
     def __init__(self, signals, file_name:str) -> None:
         self.__frame_data = {}
         self.__frame_count = 0
         self.__batchsize = 128
-        self.__filename = os.path.dirname(__file__)
-        self.__filename = os.path.join(self.__filename, 
-                                       f'../output/{file_name}')
+        self.__filename = FileHandler.create_current_folder()
+        self.__filename = os.path.join(self.__filename,
+                                       f'{file_name}')
         signals.finished.connect(self.__save_last)
 
     def __add_to_dict(self, frame: Frame):
@@ -55,19 +60,19 @@ class ParameterFile():
         with h5py.File(file_name, 'a') as param_file:
             for frame_key, data in self.__frame_data.items():
                 frame_group = param_file.create_group(frame_key)
-                frame_group.create_dataset("right_knee_angle", 
+                frame_group.create_dataset("right_knee_angle",
                                             data=data['right_knee_angle'])
-                frame_group.create_dataset("left_knee_angle", 
+                frame_group.create_dataset("left_knee_angle",
                                             data=data['left_knee_angle'])
-                frame_group.create_dataset("right_foot_x", 
+                frame_group.create_dataset("right_foot_x",
                                             data=data['right_foot_x'])
-                frame_group.create_dataset("right_foot_y", 
+                frame_group.create_dataset("right_foot_y",
                                             data=data['right_foot_y'])
-                frame_group.create_dataset("left_foot_x", 
+                frame_group.create_dataset("left_foot_x",
                                             data=data['left_foot_x'])
-                frame_group.create_dataset("left_foot_y", 
+                frame_group.create_dataset("left_foot_y",
                                             data=data['left_foot_y'])
-                frame_group.create_dataset("hip_height", 
+                frame_group.create_dataset("hip_height",
                                             data=data['hip_height'])
         self.__frame_data.clear()
 
@@ -83,7 +88,7 @@ class ParameterFile():
         '''
         self.__add_to_dict(frame)
         if self.__frame_count % self.__batchsize == 0:
-            self.__write_to_file() 
+            self.__write_to_file()
 
     def __save_last(self):
         '''
@@ -95,7 +100,7 @@ class ParameterFile():
         self.__write_to_file()
         file_name = self.__filename + '.hdf5'
         # self.load(file_name)
-  
+
     def load(self, path: str):
         right_foot_y = []
         left_foot_y = []
@@ -126,3 +131,50 @@ class ParameterFile():
         file_name = self.__filename + '.png'
         plt.savefig(file_name)
         # plt.show()
+
+class FileHandler():
+    '''
+    The Filehandler takes care to create the correct folder structure and
+    provides all neccessarry paths to interact with parameter files.
+
+    Outputs can be found under:
+    software_path/analysis/YYYY-MM-dd
+    Where date is the ANALYSIS DATE
+    '''
+    __OUTPUT_FOLDER = "analysis"
+    def __init__(self) -> None:
+        pass
+
+    def create_general_structure() -> bool:
+        '''
+        creates "analysis" folder, that later holds all analysis outputs.
+        '''
+        analysis_output = os.path.join(os.getcwd(),
+                                       FileHandler.__OUTPUT_FOLDER)
+        if not os.path.exists(analysis_output):
+            os.makedirs(analysis_output)
+
+    def get_output_path() -> str:
+        '''
+        Get absolut output path.
+
+        Returns
+        -------
+        absolute path to the software's output folder in which
+        anlysis results are stored.
+        '''
+        return os.path.join(os.getcwd(), FileHandler.__OUTPUT_FOLDER)
+
+    def create_current_folder() -> str:
+        '''
+        creates folder inside analysis output folder with current
+        date.
+        Analysis outputs are actually stored like:
+        software_path/analysis/YYYY-MM-dd
+        '''
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        path = os.path.join(os.getcwd(), FileHandler.__OUTPUT_FOLDER
+                            + f'/{current_date}')
+        if not os.path.exists(path):
+            os.makedirs(path)
+        return path

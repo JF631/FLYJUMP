@@ -154,6 +154,7 @@ cython_debug/
 
 #output files
 output/
+analysis/
 
 #specific files that should not be included yet
 # filehandler.py

@@ -143,6 +143,15 @@ class Frame():
                                     data=self.__data)
 
     def to_rgb(self) -> np.ndarray:
+        '''
+        Converts mp.Image to RGB image.
+
+        Returns
+        -------
+        frame : np.ndarray
+            current frame in rgb color format, shape
+            (height, width, channels)
+        '''
         return cv2.cvtColor(self.__data, cv2.COLOR_BGR2RGB)
 
     def data(self) -> np.ndarray:
@@ -195,7 +204,7 @@ class Frame():
             normalized height of body centroid in current frame. 
         '''
         return self.__hip_position[1]
-    
+
     def hip_pos(self)->np.ndarray:
         '''
         Returns

@@ -4,8 +4,6 @@ Module that provides several custom warnings.
 Author: Jakob Faust (software_jaf@mx442.de)
 Date: 2023-10-124
 '''
-import warnings
-warnings.filterwarnings("always")
 from PyQt5.QtWidgets import QDialog, QLabel, QVBoxLayout, QDialogButtonBox
 
 class PotentialRaceConditionWarning(ResourceWarning):
@@ -34,7 +32,7 @@ class WarningDialog(QDialog):
 
     def show_warning(self, message, category, filename, lineno, file=None,
                      line=None):
-        warning_text = f"""I detected some potential error source in 
+        warning_text = f"""I detected some potential error source in
         {filename}: {message}"""
         self.label.setText(warning_text)
         self.exec()
