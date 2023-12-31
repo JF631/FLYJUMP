@@ -1,3 +1,9 @@
+'''
+Module that holds relevant objects for the overalll software behavior.
+
+Author: Jakob Faust (software_jaf@mx442.de)
+Date: 2023-11-07
+'''
 from threading import Lock
 from PyQt5.QtCore import QObject, pyqtSignal
 
@@ -20,7 +26,7 @@ class SharedBool:
         '''
         with self.__lock:
             self.__value = True
-    
+
     def get(self)->bool:
         '''
         Returns
