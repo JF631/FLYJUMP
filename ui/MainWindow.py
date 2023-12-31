@@ -58,6 +58,7 @@ class MainWindow(QMainWindow):
             return
         if not self.video_widget:
             return
+        self.progressbar_area.clear()
         show_video = True
         if len(file_names) > 1:
             show_video = False
