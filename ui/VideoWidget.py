@@ -20,7 +20,7 @@ class VideoWidget(QWidget):
     def connect_signals(self, video_signals: VideoSignals):
         self.video_signals = video_signals
         self.video_signals.update_frame.connect(self.update)
-        # self.video_signals.finished.connect(self.clear)
+        self.video_signals.error.connect(self.clear)
 
     @pyqtSlot(Frame)
     def update(self, frame: Frame):
@@ -38,13 +38,17 @@ class VideoWidget(QWidget):
     def update_label_size(self):
         self.video_label.resize(self.size())
 
+    def disconnect_signals(self):
+        self.video_signals.update_frame.disconnect(self.update)
+        self.video_signals.error.disconnect(self.clear)
+
     @pyqtSlot()
     def clear(self):
+        self.video_signals.update_frame.disconnect(self.update)
+        self.video_signals.error.disconnect(self.clear)
         layout = self.parentWidget().layout()
         if layout:
             layout.removeWidget(self)
-            self.video_signals.update_frame.disconnect(self.update)
-            self.video_signals.finished.disconnect(self.clear)
             self.deleteLater()
 
     def move_to_main_thread(obj):
