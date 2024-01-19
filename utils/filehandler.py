@@ -19,14 +19,16 @@ class ParameterFile():
     A parameter file holds analysis results for each frame.
     It is saved on disk as hdf5 file.
     '''
-    def __init__(self, signals, file_name:str) -> None:
+    def __init__(self, file_path:str, signals = None) -> None:
         self.__frame_data = {}
         self.__frame_count = 0
         self.__batchsize = 128
-        self.__filename = FileHandler.create_current_folder()
-        self.__filename = os.path.join(self.__filename,
-                                       f'{file_name}')
-        signals.finished.connect(self.__save_last)
+        self.__file_path = file_path
+        self._hip_height = []
+        self._right_foot_pos = []
+        self._left_foot_pos = []
+        if signals:
+            signals.error.connect(self.close)
 
     def __add_to_dict(self, frame: Frame):
         '''
@@ -38,8 +40,8 @@ class ParameterFile():
             frame object whose parameters should be saved to disk
         '''
         r_knee_angle, l_knee_angle = frame.knee_angles()
-        l_foot_x, l_foot_y, r_foot_x, r_foot_y = frame.foot_pos().ravel(order='F')
-        hip_height = frame.centroid_height()
+        l_foot_x, l_foot_y, r_foot_x, r_foot_y = 1 - frame.foot_pos().ravel(order='F')
+        hip_height = 1- frame.centroid_height()
         frame_key = f"frame_{self.__frame_count}"
         self.__frame_data[frame_key] = {
             "right_knee_angle" : r_knee_angle,
@@ -52,11 +54,23 @@ class ParameterFile():
         }
         self.__frame_count += 1
 
+    def get_path(self):
+        '''
+        get file path of current parameter file.
+
+        Returns
+        --------
+        path : str
+            absolute file path of current parameter file.
+        '''
+        return self.__file_path
+
     def __write_to_file(self):
         '''
         Writes all frame parameters from buffer to disk
         '''
-        file_name = self.__filename + '.hdf5'
+        file_name = self.get_path()
+        print(f"writing to {file_name}")
         with h5py.File(file_name, 'a') as param_file:
             for frame_key, data in self.__frame_data.items():
                 frame_group = param_file.create_group(frame_key)
@@ -89,8 +103,22 @@ class ParameterFile():
         self.__add_to_dict(frame)
         if self.__frame_count % self.__batchsize == 0:
             self.__write_to_file()
+    
+    def add_metadata(self, data:tuple):
+        '''
+        saves metadata in the root of the hdf5 file.
 
-    def __save_last(self):
+        Parameters
+        ----------
+        data : tuple
+            (key, metadata) - metadata that should be stored under 'key'
+        '''
+        file_name = self.get_path()
+        key, metadata = data
+        with h5py.File(file_name, 'a') as param_file:
+            param_file.attrs[key] = metadata
+
+    def close(self):
         '''
         Saves all remaining frames to file.
         
@@ -98,39 +126,97 @@ class ParameterFile():
         '''
         print("saving last data..")
         self.__write_to_file()
-        file_name = self.__filename + '.hdf5'
         # self.load(file_name)
-
-    def load(self, path: str):
+    
+    def load(self):
         right_foot_y = []
         left_foot_y = []
         hip_height = []
-        with h5py.File(path, 'r') as param_file:
+        with h5py.File(self.get_path(), 'r') as param_file:
             sorted_key = sorted(param_file.keys(), key=lambda x : int(x[6:]))
             for frame in sorted_key:
-                # print(frame)
                 group = param_file[frame]
                 right_y = group["right_foot_y"][()]
-                right_foot_y.append((1.0 - right_y))
+                right_foot_y.append(right_y)
                 left_y = group["left_foot_y"][()]
-                left_foot_y.append((1.0 - left_y))
+                left_foot_y.append(left_y)
                 hip_y = group["hip_height"][()]
-                hip_height.append((1.0 - hip_y))
-                # print(f"r: {right_y}, l: {left_y}")
+                hip_height.append(hip_y)
+            self._hip_height = np.array(hip_height)
+    
+    def get_hip_height(self):
+        '''
+        Relative hip height over time.
 
-        window_size = 3
-        smoothed_hip = np.convolve(hip_height, np.ones(window_size) / window_size, mode='same')
-        smoothed_left = np.convolve(left_foot_y, np.ones(window_size) / window_size, mode='same')
-        smoothed_right = np.convolve(right_foot_y, np.ones(window_size) / window_size, mode='same')
-        plt.xlabel("t [frames]")
-        plt.ylabel("height [norm. pix]")
-        plt.plot(hip_height, label='hip')
-        plt.plot(left_foot_y, label='left foot')
-        plt.plot(right_foot_y, label='right foot')
-        plt.legend()
-        file_name = self.__filename + '.png'
-        plt.savefig(file_name)
-        # plt.show()
+        Returns
+        -------
+        hip_height : np.ndarray
+            hip height over time as flat numpy array
+            shape (num_frames,)
+        '''
+        return self._hip_height
+
+    # @staticmethod
+    # def load(path: str):
+    #     right_foot_y = []
+    #     left_foot_y = []
+    #     hip_height = []
+    #     with h5py.File(path, 'r') as param_file:
+    #         sorted_key = sorted(param_file.keys(), key=lambda x : int(x[6:]))
+    #         for frame in sorted_key:
+    #             group = param_file[frame]
+    #             right_y = group["right_foot_y"][()]
+    #             right_foot_y.append(right_y)
+    #             left_y = group["left_foot_y"][()]
+    #             left_foot_y.append(left_y)
+    #             hip_y = group["hip_height"][()]
+    #             hip_height.append(hip_y)
+    #     total_error = 100
+    #     index = 0
+    #     possible_indices = []
+    #     runup_coeffs = []
+    #     jump_coeffs = []
+    #     for i in range(2, len(hip_height) - 2):
+    #         x_runup = np.arange(len(hip_height[:i]))
+    #         x_jump = np.arange(len(hip_height[i:]))
+    #         hip_fit_runup, residuals_runup, _, _, _ = np.polyfit(
+    #             x_runup,hip_height[:i], 1, full=True)
+    #         hip_fit_jump, residuals_jump, _, _, _ = np.polyfit(
+    #             x_jump, hip_height[i:], 2, full=True)
+    #         fitting_error = residuals_runup + residuals_jump
+    #         if fitting_error:
+    #             possible_indices.append(fitting_error[0])
+    #         if fitting_error < total_error:
+    #             total_error = fitting_error
+    #             index = i
+    #             runup_coeffs = hip_fit_runup
+    #             jump_coeffs = hip_fit_jump
+    #     possible_indices = np.array(possible_indices)
+    #     possible_indices = np.where(np.logical_and(
+    #         (possible_indices < (total_error + total_error*0.01)), 
+    #         (possible_indices > (total_error - total_error*0.01))))[0]
+    #     '''
+    #     TODO verify the following if statement makes sense and is reasonable.
+    #     It is meant to solve the problem that a takeoff is detected during the
+    #     runup.
+    #     '''
+    #     if(index < possible_indices[-1]):
+    #         index = possible_indices[-1]
+    #     print(f"takeoff detected at {index}")
+    #     hip_runup = np.poly1d(runup_coeffs)
+    #     hip_jump = np.poly1d(jump_coeffs)
+    #     x_runup = np.arange(0, index)
+    #     x_jump = np.arange(index, len(hip_height))
+    #     plt.xlabel("t [frames]")
+    #     plt.ylabel("height [norm. pix]")
+    #     plt.plot(hip_height, label='hip')
+    #     plt.plot(x_runup, hip_runup(x_runup), label="runup")
+    #     plt.plot(x_jump, hip_jump(np.arange(len(x_jump))), label="jump")
+    #     plt.plot(left_foot_y, label='left foot')
+    #     plt.plot(right_foot_y, label='right foot')
+    #     plt.legend()
+    #     file_name ='test.png'
+    #     plt.savefig(file_name)
 
 class FileHandler():
     '''
@@ -145,6 +231,7 @@ class FileHandler():
     def __init__(self) -> None:
         pass
 
+    @staticmethod
     def create_general_structure() -> bool:
         '''
         creates "analysis" folder, that later holds all analysis outputs.
@@ -154,6 +241,7 @@ class FileHandler():
         if not os.path.exists(analysis_output):
             os.makedirs(analysis_output)
 
+    @staticmethod
     def get_output_path() -> str:
         '''
         Get absolut output path.
@@ -165,6 +253,7 @@ class FileHandler():
         '''
         return os.path.join(os.getcwd(), FileHandler.__OUTPUT_FOLDER)
 
+    @staticmethod
     def create_current_folder() -> str:
         '''
         creates folder inside analysis output folder with current
