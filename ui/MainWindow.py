@@ -21,7 +21,8 @@ from .PlotWidget import MultiPlot
 from .VideoWidget import VideoWidget
 from ljanalyzer.video import Video
 from utils.controlsignals import ControlSignals, SharedBool
-from utils.filehandler import FileHandler
+from utils.filehandler import FileHandler, ParameterFile
+from utils.warnings import WarningDialog
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -33,7 +34,9 @@ class MainWindow(QMainWindow):
         self.video_widget = None
         self.setupUi()
         self.ui.action_choose_video_file.triggered.connect(
-            self.choose_file_dialog)
+            self.choose_video_dialog)
+        self.ui.action_load_analysis.triggered.connect(
+            self.choose_analysis_dialog)
         self.thread_pool = QThreadPool.globalInstance()
         FileHandler.create_general_structure()
         '''
@@ -69,6 +72,7 @@ class MainWindow(QMainWindow):
             progress_widget = VideoProgressBar(video_task.get_filename(),
                                                video_task.signals)
             if show_video:
+                video_task.signals.finished.connect(self.analysation_finished)
                 multi_plot = MultiPlot(signals=video_task.signals,
                                        num_plots=2, curves=plot_descr,
                                        parent=self.ui.result_area)
@@ -78,7 +82,26 @@ class MainWindow(QMainWindow):
             self.thread_pool.start(video_task)
 
     @pyqtSlot()
-    def choose_file_dialog(self):
+    def choose_analysis_dialog(self):
+        '''
+        opens file chooser dialog to let user select an analyzed video file
+        '''
+        dialog_options = QFileDialog.Options()
+        dialog_options |= QFileDialog.ReadOnly
+        start_path = FileHandler.get_output_path()
+        file_names, _ = QFileDialog.getOpenFileNames(
+            self, 'Choose an analysis File', start_path,
+            'HDF5 Files (*.h5 *.hdf5);;All Files (*)',
+            options=dialog_options
+        )
+        if not file_names:
+            return
+        param_file = ParameterFile(file_names[0])
+        param_file.load()
+        print(file_names)
+
+    @pyqtSlot()
+    def choose_video_dialog(self):
         '''
         opens file chooser dialog to let user select a video file
         '''
@@ -90,6 +113,15 @@ class MainWindow(QMainWindow):
             options=dialog_options
         )
         self.__start_video_analaysis(file_names)
+    
+    @pyqtSlot(str)
+    def analysation_finished(self, anlysis_path):
+        print(f"analysis path: {anlysis_path}")
+        video = Video(anlysis_path, self.abort_flag)
+        self.video_widget.connect_signals(video.signals)
+        takeoff = video.takeoff_frame(full=True)
+        print(f"takeoff at {takeoff}")
+        self.video_widget.disconnect_signals()
 
     def closeEvent(self, event) -> None:
         self.abort_flag.set()
