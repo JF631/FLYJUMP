@@ -3,6 +3,10 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout
 from PyQt5.QtCore import Qt, pyqtSlot
 from qwt import QwtPlot, QwtPlotCurve, QwtLegend
 import numpy as np
+import matplotlib
+matplotlib.use('Qt5Agg')
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
 
 from ljanalyzer.video import VideoSignals
 
@@ -67,7 +71,82 @@ class MultiPlot(QWidget):
             plot.set_data(data[:, curve_offset:curve_offset + plot_curves])
             curve_offset += plot_curves
         # self.plot_widgets[0].set_data(data)
+
+class MatplotCanvas(FigureCanvasQTAgg):
+    '''
+    Class that allows to embed a simple matplotlib plot inside the GUI.
+    It currently supports plotting simple 2D data via plot2D().
+    '''
+    def __init__(self, parent=None, width=0.1, height=3, dpi=100):
+        fig = Figure(figsize=(width, height), dpi=dpi)
+        self.axes = fig.add_subplot(111)
+        fig.patch.set_alpha(0)
+        self.axes.set_alpha(0)
+        self.axes.set_xlabel('t[frames]')
+        self.axes.set_ylabel('height[norm. pixel]')
+        self.x_values: np.ndarray
+        self.y_values: np.ndarray
+        super(MatplotCanvas, self).__init__(fig)
+
+    def plot2D(self, *values, label=None):
+        '''
+        creates a simple 2d plot.
         
+        Parameters
+        ----------
+        values : tuple
+            list like values to plot.
+            provide x and y values. if no x values are provided, they will
+            simply be fitted to match the y value length.
+        label : str
+            label for the current line that should be plotted.
+        '''
+        num_values = len(values)
+        if num_values > 2 or num_values < 1:
+            return
+        if num_values == 1:
+            self.y_values = np.array(values[0])
+            self.x_values = np.arange(len(self.y_values))
+        if num_values == 2:
+            self.x_values, self.y_values = values
+            self.x_values = np.array(self.x_values)
+            self.y_values = np.array(self.y_values)
+        if not self.x_values.shape == self.y_values.shape:
+            return
+        self.axes.plot(self.x_values, self.y_values, label=label)
+        self.axes.legend()
+        self.draw()
+
+    def clear(self):
+        '''
+        removes all currently plotted data from plot.
+        '''
+        self.axes.clear()
+
+    def add_points(self, x_values, label=None):
+        '''
+        adds red dots to 2D plot at given x positions.
+        plot2D() must have been invoked before
+        
+        Parameters
+        ----------
+        x_values : list
+            x values at which the dots should be scattered.
+        label : str
+            the data label that should be shown in matplotlib legend.
+        '''
+        if not y_values:
+            return
+        x_values = np.array(x_values)
+        y_values = self.y_values[x_values]
+        if not y_values.shape == x_values.shape:
+            return
+        self.axes.scatter(x_values, y_values,
+                              color='red', marker='o', label=label)
+        for x, y in zip(x_values, y_values):
+            self.axes.annotate('({}, {:.2f})'.format(x, y), (x,y))
+        self.axes.legend()
+        self.draw()
 
 class Plot(QWidget):
     '''
@@ -148,17 +227,11 @@ class PlotWidget(QWidget):
         self.r_foot_curve.setTitle("right foot")
         l_foot_pen = QPen(Qt.red)
         self.l_foot_curve.setPen(l_foot_pen)
-
-        # Set up the layout
         layout = QVBoxLayout()
         layout.addWidget(self.plot)
         self.setLayout(layout)
-
-        # Customize the plot and curve as needed
-        # For example, you can set axis titles:
         self.plot.setAxisTitle(QwtPlot.xBottom, "X Axis")
         self.plot.setAxisTitle(QwtPlot.yLeft, "Y Axis")
-        
         self.l_foot_curve.attach(self.plot)
         self.r_foot_curve.attach(self.plot)
 
@@ -170,8 +243,6 @@ class PlotWidget(QWidget):
         self.r_foot_y = np.append(self.r_foot_y, data[1,1])
         self.l_foot_curve.setData(np.arange(len(self.l_foot_y)), self.l_foot_y)
         self.r_foot_curve.setData(np.arange(len(self.r_foot_y)), self.r_foot_y)
-
-        # Automatically adjust the axis scales based on the data
         self.plot.setAxisAutoScale(QwtPlot.xBottom)
         self.plot.setAxisAutoScale(QwtPlot.yLeft)
         self.plot.replot()
