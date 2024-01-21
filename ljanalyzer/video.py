@@ -17,7 +17,6 @@ import matplotlib.pyplot as plt
 from utils.exception import FileNotFoundException, GeneralException
 from utils.controlsignals import SharedBool
 from utils.filehandler import ParameterFile, FileHandler
-from utils.warnings import WarningDialog
 from .framebuffer import FrameBuffer
 from .frame import Frame
 from .posedetector import PoseDetector
@@ -74,12 +73,26 @@ class Video(QRunnable):
         to a buffer.
 
         2) Read from the same buffer and perform pose detection.
-
+    
+    Furthermore, videos can simply be played / rewind / forwarded.
+    The visualization is NOT part of this class.
+    In order to visualize video frames you need to connect to this class'
+    update_frame(Frame) signal and visualize the emitted frames on your own.
+    
+    The analysis results are published via the 
+    update_frame_parameters(np.ndarray) signal.
+    For detailed explanation see above.
 
     Parameters
     ----------
     path : str
         path to video file.
+    abort : SharedBool
+        whenever this bool turns True, all running threads are tried to be
+        interrupted.
+        Implementation is based based on C++'s std::atomic<bool>.
+        
+
     '''
     def __init__(self, path:str, abort: SharedBool) -> None:
         super().__init__()
@@ -95,6 +108,8 @@ class Video(QRunnable):
                                           maxsize=2048, lock=True)
         self.__video_completed = threading.Event()
         self.abort = abort
+        self.__playback = False
+        self.__cap: cv2.VideoCapture = None
 
     def terminate(self)->None:
         '''
@@ -140,6 +155,96 @@ class Video(QRunnable):
         self.signals.update_frame.emit(frame)
         cap.release()
 
+    def play(self, frame = None):
+        '''
+        starts video playback for the current video.
+        
+        Parameters
+        ----------
+        frame : int | None
+            if a number is given, the video will jump to this frame number before playback.
+            Otherwise, it will just start from the beginning.
+        '''
+        self.__cap = cv2.VideoCapture(self.__path)
+        self.__playback = True
+        current_frame = Frame()
+        if frame:
+            self.__playback = False
+            self.jump_to_frame(frame)
+        while self.__cap.isOpened():
+            if self.abort.get():
+                self.terminate()
+                return
+            if self.__playback:
+                valid, frame = self.__cap.read()
+                if not valid:
+                    break
+                current_frame.update(frame)
+                self.signals.update_frame.emit(current_frame)
+            if (cv2.waitKey(int(self.__frame_rate)) &
+                   0xFF == ord('q')):
+                self.terminate()
+                break
+        self.__cap.release()
+        cv2.destroyAllWindows()
+
+    def rewind(self):
+        '''
+        rewinds currently playing video by one frame.
+        '''
+        self.pause()
+        if not self.__cap:
+            return
+        current_frame = self.__cap.get(cv2.CAP_PROP_POS_FRAMES)
+        current_frame -= 1
+        self.jump_to_frame(current_frame - 1)
+
+    def forward(self):
+        '''
+        forwards currently playing video by one frame. 
+        '''
+        self.pause()
+        if not self.__cap:
+            return
+        current_frame = self.__cap.get(cv2.CAP_PROP_POS_FRAMES)
+        current_frame += 1
+        self.jump_to_frame(current_frame)
+
+    def toggle(self):
+        '''
+        plays / pauses video playback.
+        '''
+        self.__playback = not self.__playback
+
+    def pause(self):
+        '''
+        pauses video playback.
+        '''
+        self.__playback = False
+    
+    def jump_to_frame(self, frame):
+        '''
+        Jumps to a certain frame in video playback.
+        
+        Parameters
+        ----------
+        frame : int
+            frame number to which the player should jump.
+        cap : cv2.VideoCapture
+            openCV video capture object.
+            if None is provided, a new one for the current video object will
+            be created
+        '''
+        if frame > self.__frame_count or frame < 0:
+            return
+        if not self.__cap:
+            return
+        self.__cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
+        valid, frame = self.__cap.read()
+        if valid:
+            current_frame = Frame(frame)
+            self.signals.update_frame.emit(current_frame)
+
     def __read_video_file(self):
         '''
         reads video frame by frame from file, visualizes the frame and adds it
@@ -158,7 +263,7 @@ class Video(QRunnable):
             self.__frame_buffer.add(frame)
             # cv2.imshow("Video", frame)
             if (cv2.waitKey(0) &
-                    0xFF == ord('q')):
+                   0xFF == ord('q')):
                 break
         cap.release()
         print("released input")
@@ -237,9 +342,12 @@ class Video(QRunnable):
         out.release()
         frame.clear()
         lost_frames = (1 - (counter / self.__frame_count)) * 100
+        tkf_frame = self.takeoff_frame(full=False)
+        if tkf_frame:
+            print(f"takeoff detected at {tkf_frame}")
+            param_file.add_metadata(('takeoff', tkf_frame))
         param_file.close()
-        tkf_frame = self.takeoff_frame()
-        self.signals.finished.emit(self.get_output_path())
+        self.signals.finished.emit(self.get_analysis_path())
         print(f"""video {self.__path} analyzed \n
               lost frames: {self.__frame_count - counter} 
               ({lost_frames:.2f}%)""")
@@ -356,7 +464,6 @@ class Video(QRunnable):
         self.__open(self.__path)
         analysis_path = self.get_analysis_path()
         print(f"analysis {analysis_path}")
-        warning_dialog = WarningDialog(self.signals)
         if not os.path.exists(analysis_path):
             self.signals.error.emit(self.get_output_path())
             return None

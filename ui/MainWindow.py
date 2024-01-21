@@ -12,17 +12,17 @@ Ui Files for this Window:
 Author: Jakob Faust (software_jaf@mx442.de)
 Date: 2023-10-28
 '''
-from PyQt5.QtWidgets import QMainWindow, QFileDialog, QVBoxLayout
-from PyQt5.QtCore import QThreadPool, pyqtSlot
+from PyQt5.QtWidgets import QMainWindow, QFileDialog, QVBoxLayout, QWidget
+from PyQt5.QtCore import Qt, QThreadPool, pyqtSlot
+import numpy as np
 
 from .Ui_MainWindow import Ui_MainWindow
 from .VideoProgressWidget import VideoProgressBar, VideoProgessArea
-from .PlotWidget import MultiPlot
+from .PlotWidget import MultiPlot, MatplotCanvas
 from .VideoWidget import VideoWidget
 from ljanalyzer.video import Video
 from utils.controlsignals import ControlSignals, SharedBool
 from utils.filehandler import FileHandler, ParameterFile
-from utils.warnings import WarningDialog
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -38,6 +38,7 @@ class MainWindow(QMainWindow):
         self.ui.action_load_analysis.triggered.connect(
             self.choose_analysis_dialog)
         self.thread_pool = QThreadPool.globalInstance()
+        self.current_video = None
         FileHandler.create_general_structure()
         '''
         limit used cpu cores to half of available cores.
@@ -48,13 +49,21 @@ class MainWindow(QMainWindow):
         )
 
     def setupUi(self):
-        self.progressbar_area = VideoProgessArea(self)
-        result_area_layout = QVBoxLayout(self.ui.result_area)
-        result_area_layout.addWidget(self.progressbar_area)
-        video_area_layout = QVBoxLayout(self.ui.main_video)
-        self.ui.main_video.setLayout(video_area_layout)
+        #main video widget
         self.video_widget = VideoWidget(parent=self.ui.main_video)
-        video_area_layout.addWidget(self.video_widget)
+        video_area = QVBoxLayout(self.ui.main_video)
+        video_area.addWidget(self.video_widget)
+        self.ui.main_video.setLayout(video_area)
+        #matplot widget
+        self.matplot_widget = MatplotCanvas(self.ui.result_area)
+        result_area = QVBoxLayout(self.ui.result_area)
+        result_area.addWidget(self.matplot_widget, stretch=1)
+        result_area.addWidget(QWidget(), stretch=1)
+        #analysis progressbar
+        self.progressbar_area = VideoProgessArea(self.ui.result_area)
+        result_area.addWidget(self.progressbar_area)
+        self.ui.result_area.setLayout(result_area)
+        
 
     def __start_video_analaysis(self, file_names):
         if not file_names:
@@ -80,6 +89,22 @@ class MainWindow(QMainWindow):
                 self.progressbar_area.add_widget(multi_plot)
             self.progressbar_area.add_widget(progress_widget)
             self.thread_pool.start(video_task)
+    
+    def __show_analysis_result(self, file_names):
+        if not file_names:
+            return
+        param_file = ParameterFile(file_names[0])
+        param_file.load()
+        takeoff_frame = param_file.get_takeoff_frame()
+        self.matplot_widget.clear()
+        self.progressbar_area.clear()
+        self.matplot_widget.plot2D(param_file.get_left_foot_height(), label='left foot')
+        self.matplot_widget.plot2D(param_file.get_right_foot_height(), label='right foot')
+        self.matplot_widget.plot2D(param_file.get_hip_height(), label='hip height')
+        self.matplot_widget.add_points(takeoff_frame, label='changing points')
+        self.current_video = Video(param_file.get_video_path(), self.abort_flag)
+        self.video_widget.connect_signals(self.current_video.signals)
+        self.current_video.play(takeoff_frame[0])
 
     @pyqtSlot()
     def choose_analysis_dialog(self):
@@ -94,11 +119,7 @@ class MainWindow(QMainWindow):
             'HDF5 Files (*.h5 *.hdf5);;All Files (*)',
             options=dialog_options
         )
-        if not file_names:
-            return
-        param_file = ParameterFile(file_names[0])
-        param_file.load()
-        print(file_names)
+        self.__show_analysis_result(file_names)
 
     @pyqtSlot()
     def choose_video_dialog(self):
@@ -117,11 +138,19 @@ class MainWindow(QMainWindow):
     @pyqtSlot(str)
     def analysation_finished(self, anlysis_path):
         print(f"analysis path: {anlysis_path}")
-        video = Video(anlysis_path, self.abort_flag)
-        self.video_widget.connect_signals(video.signals)
-        takeoff = video.takeoff_frame(full=True)
-        print(f"takeoff at {takeoff}")
         self.video_widget.disconnect_signals()
+        self.__show_analysis_result([anlysis_path])
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Space:
+            if self.current_video:
+                self.current_video.toggle()
+        if event.key() == Qt.Key_Left:
+            if self.current_video:
+                self.current_video.rewind()
+        if event.key() == Qt.Key_Right:
+            if self.current_video:
+                self.current_video.forward()
 
     def closeEvent(self, event) -> None:
         self.abort_flag.set()
