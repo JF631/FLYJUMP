@@ -1,5 +1,5 @@
 from PyQt5.QtGui import QPen
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox
 from PyQt5.QtCore import Qt, pyqtSlot
 from qwt import QwtPlot, QwtPlotCurve, QwtLegend
 import numpy as np
@@ -9,6 +9,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
 from ljanalyzer.video import VideoSignals
+from utils.controlsignals import ControlSignals
 
 
 class MultiPlot(QWidget):
@@ -77,16 +78,24 @@ class MatplotCanvas(FigureCanvasQTAgg):
     Class that allows to embed a simple matplotlib plot inside the GUI.
     It currently supports plotting simple 2D data via plot2D().
     '''
-    def __init__(self, parent=None, width=0.1, height=3, dpi=100):
+    def __init__(self, parent=None, width=0.1, height=3, dpi=100,
+                 x_label = None, y_label = None,
+                 control_signals: ControlSignals = None):
         fig = Figure(figsize=(width, height), dpi=dpi)
         self.axes = fig.add_subplot(111)
         fig.patch.set_alpha(0)
         self.axes.set_alpha(0)
-        self.axes.set_xlabel('t[frames]')
-        self.axes.set_ylabel('height[norm. pixel]')
-        self.x_values: np.ndarray
-        self.y_values: np.ndarray
+        self.axes.set_xlabel(x_label)
+        self.axes.set_ylabel(y_label)
+        self.x_values: np.ndarray = None
+        self.y_values: np.ndarray = None
+        self.selected_frame = None
+        self.control_signals = control_signals
+        if self.control_signals:
+            self.control_signals.jump_to_frame.connect(
+                self.update_current_frame_indicator)
         super(MatplotCanvas, self).__init__(fig)
+        self.mpl_connect('button_press_event', self.on_click)
 
     def plot2D(self, *values, label=None):
         '''
@@ -117,6 +126,36 @@ class MatplotCanvas(FigureCanvasQTAgg):
         self.axes.legend()
         self.draw()
 
+    def on_click(self, event):
+        '''
+        handles clicks on the plot.
+        emits jump_to_frame(int) control signal.
+        '''
+        if event.inaxes == self.axes:
+            x_clicked = int(event.xdata)
+            if self.control_signals:
+                self.control_signals.jump_to_frame.emit(x_clicked)
+
+    def update_current_frame_indicator(self, frame):
+        '''
+        updates indicator that corresponds to the currently shown video frame.
+        updates are triggered via jump_to_frame control signal.
+
+        Parameters
+        ----------
+        frame : int
+            Current frame that should be indicated.
+        '''
+        if self.y_values is None:
+            return
+        x_value = frame
+        y_value = self.y_values[x_value]
+        if self.selected_frame:
+            self.selected_frame.remove()
+        self.selected_frame = self.axes.plot(x_value, y_value, 'ro',
+                                             markersize=8)[0]
+        self.draw()
+
     def clear(self):
         '''
         removes all currently plotted data from plot.
@@ -135,7 +174,7 @@ class MatplotCanvas(FigureCanvasQTAgg):
         label : str
             the data label that should be shown in matplotlib legend.
         '''
-        if not y_values:
+        if x_values is None:
             return
         x_values = np.array(x_values)
         y_values = self.y_values[x_values]
