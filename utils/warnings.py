@@ -33,10 +33,8 @@ class WarningDialog(QDialog):
         if signals:
             signals.error.connect(self.warning_dialog)
 
-    def show_warning(self, message, category, filename, lineno, file=None,
-                     line=None):
-        warning_text = f"""I detected some potential error source in
-        {filename}: {message}"""
+    def show_warning(self, message):
+        warning_text = f"""Warning: {message}"""
         self.label.setText(warning_text)
         self.exec()
     
