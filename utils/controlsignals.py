@@ -27,6 +27,10 @@ class SharedBool:
         with self.__lock:
             self.__value = True
 
+    def reset(self):
+        with self.__lock:
+            self.__value = False
+
     def get(self)->bool:
         '''
         Returns
@@ -44,7 +48,10 @@ class ControlSignals(QObject):
     Signals
     --------
     terminate : pyqtSignal
-        gracefully terminate all running processes - release buffers and close 
+        gracefully terminate all running processes - release buffers and close
         programm
+    jump_to_frame : pyqtSignal
+        emmitted whenever the video playback should jump to a certain frame.
     '''
     terminate = pyqtSignal()
+    jump_to_frame = pyqtSignal(int)
