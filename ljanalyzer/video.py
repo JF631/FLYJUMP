@@ -15,7 +15,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from utils.exception import FileNotFoundException, GeneralException
-from utils.controlsignals import SharedBool
+from utils.controlsignals import SharedBool, ControlSignals
 from utils.filehandler import ParameterFile, FileHandler
 from .framebuffer import FrameBuffer
 from .frame import Frame
@@ -97,9 +97,11 @@ class Video(QRunnable):
     def __init__(self, path:str, abort: SharedBool) -> None:
         super().__init__()
         self.signals = VideoSignals()
+        self.control_signals = None
         self.__frame_count = 0
         self.__frame_rate = 0
         self.dims = (0, 0, 0)
+        self.__stop_flag = False
         self.__open(path)
         self.__path = path
         self.__output_path = path
@@ -115,7 +117,7 @@ class Video(QRunnable):
         '''
         Stop running analysis.
         '''
-        print("trying to abort analysis")
+        print(f"trying to abort analysis: {self.get_output_path()}")
         self.signals.error.emit(self.get_output_path())
 
     def __ground_contact(self, prev_foot_pos:np.ndarray,
@@ -172,9 +174,10 @@ class Video(QRunnable):
             self.__playback = False
             self.jump_to_frame(frame)
         while self.__cap.isOpened():
-            if self.abort.get():
+            if self.abort.get() or self.__stop_flag:
+                print("terminate")
                 self.terminate()
-                return
+                break
             if self.__playback:
                 valid, frame = self.__cap.read()
                 if not valid:
@@ -197,7 +200,10 @@ class Video(QRunnable):
             return
         current_frame = self.__cap.get(cv2.CAP_PROP_POS_FRAMES)
         current_frame -= 1
-        self.jump_to_frame(current_frame - 1)
+        if self.control_signals:
+            self.control_signals.jump_to_frame.emit(int(current_frame - 1))
+        else:
+            self.jump_to_frame(current_frame - 1)
 
     def forward(self):
         '''
@@ -208,7 +214,10 @@ class Video(QRunnable):
             return
         current_frame = self.__cap.get(cv2.CAP_PROP_POS_FRAMES)
         current_frame += 1
-        self.jump_to_frame(current_frame)
+        if self.control_signals:
+            self.control_signals.jump_to_frame.emit(int(current_frame))
+        else:
+            self.jump_to_frame(current_frame)
 
     def toggle(self):
         '''
@@ -221,6 +230,15 @@ class Video(QRunnable):
         pauses video playback.
         '''
         self.__playback = False
+
+    def stop(self):
+        '''
+        stops video playback.
+        '''
+        print("stop invoked")
+        self.__cap.release()
+        self.__frame_buffer
+        self.__stop_flag = True
     
     def jump_to_frame(self, frame):
         '''
@@ -239,6 +257,7 @@ class Video(QRunnable):
             return
         if not self.__cap:
             return
+        self.pause()
         self.__cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
         valid, frame = self.__cap.read()
         if valid:
@@ -342,15 +361,15 @@ class Video(QRunnable):
         out.release()
         frame.clear()
         lost_frames = (1 - (counter / self.__frame_count)) * 100
+        param_file.close()
         tkf_frame = self.takeoff_frame(full=False)
         if tkf_frame:
             print(f"takeoff detected at {tkf_frame}")
             param_file.add_metadata(('takeoff', tkf_frame))
-        param_file.close()
-        self.signals.finished.emit(self.get_analysis_path())
         print(f"""video {self.__path} analyzed \n
               lost frames: {self.__frame_count - counter} 
               ({lost_frames:.2f}%)""")
+        self.signals.finished.emit(self.get_analysis_path())
         cv2.destroyAllWindows()
 
     def update_progress(self, current_progress: int):
@@ -463,8 +482,8 @@ class Video(QRunnable):
         '''
         self.__open(self.__path)
         analysis_path = self.get_analysis_path()
-        print(f"analysis {analysis_path}")
         if not os.path.exists(analysis_path):
+            print(f"file not found: {analysis_path}!")
             self.signals.error.emit(self.get_output_path())
             return None
         param_file = ParameterFile(analysis_path)
@@ -492,7 +511,11 @@ class Video(QRunnable):
                                  residuals_landing)
                 if fitting_error and full:
                     possible_indices.append(fitting_error[0])
-                if fitting_error < total_error:
+                '''
+                since we already know the fitted jumping curve must be of form
+                -ax^2 + bx + c, we know a = hip_fit_jump[0] < 0.
+                '''
+                if fitting_error < total_error and hip_fit_jump[0] < 0:
                     total_error = fitting_error
                     changing_points = (i,j)
                     runup_coeffs = hip_fit_runup
@@ -509,7 +532,7 @@ class Video(QRunnable):
         '''
         # if(full and (changing_points < possible_indices[-1])):
         #     index = possible_indices[-1]
-        print(f"changing points detected at {changing_points}")
+        # print(f"changing points detected at {changing_points}")
         hip_runup = np.poly1d(runup_coeffs)
         hip_jump = np.poly1d(jump_coeffs)
         x_runup = np.arange(0, changing_points[0])
@@ -528,3 +551,15 @@ class Video(QRunnable):
         if full:
             return (changing_points, possible_indices)
         return changing_points
+
+    def set_control_signals(self, control_signals: ControlSignals):
+        ''''
+        sets program control signals to current video.
+
+        Parameters
+        ----------
+        control_signals : ControlSignals
+            programm control signals
+        '''
+        self.control_signals = control_signals
+        self.control_signals.jump_to_frame.connect(self.jump_to_frame)
