@@ -26,6 +26,8 @@ class ParameterFile():
         self._hip_height = []
         self._right_foot_pos = []
         self._left_foot_pos = []
+        self._left_knee_angle = []
+        self._right_knee_angle = []
         if signals:
             signals.error.connect(self.close)
 
@@ -140,9 +142,10 @@ class ParameterFile():
             number in which the takeoff has been detected
         '''
         file_name = self.get_path()
-        rtrn = -1
-        with h5py.File(file_name, 'a') as param_file:
-            rtrn = param_file.attrs.get('takeoff', -1)
+        rtrn = None
+        with h5py.File(file_name, 'r') as param_file:
+            rtrn = param_file.attrs.get('takeoff', None)
+
         return rtrn
 
     def close(self):
@@ -169,6 +172,8 @@ class ParameterFile():
         right_foot_y = []
         left_foot_y = []
         hip_height = []
+        right_knee_angle = []
+        left_knee_angle = []
         with h5py.File(self.get_path(), 'r') as param_file:
             '''
             following line: param_file.keys() returns sth. like 'frame_10'
@@ -185,9 +190,15 @@ class ParameterFile():
                 left_foot_y.append(left_y)
                 hip_y = group["hip_height"][()]
                 hip_height.append(hip_y)
+                right_angle = group["right_knee_angle"][()]
+                right_knee_angle.append(right_angle)
+                left_angle = group["left_knee_angle"][()]
+                left_knee_angle.append(left_angle)
             self._hip_height = np.array(hip_height)
             self._left_foot_pos = np.array(left_foot_y)
             self._right_foot_pos = np.array(right_foot_y)
+            self._right_knee_angle = np.array(right_knee_angle)
+            self._left_knee_angle = np.array(left_knee_angle)
     
     def get_hip_height(self):
         '''
@@ -224,6 +235,30 @@ class ParameterFile():
             shape (num_frames,)
         '''
         return self._left_foot_pos
+
+    def get_left_knee_angle(self):
+        '''
+        Absolute left knee angle over time.
+
+        Returns
+        -------
+        hip_height : np.ndarray
+            left knee angle over time as flat numpy array
+            shape (num_frames,)
+        '''
+        return self._left_knee_angle
+
+    def get_right_knee_angle(self):
+        '''
+        Absolute right knee angle over time.
+
+        Returns
+        -------
+        hip_height : np.ndarray
+            right knee angle over time as flat numpy array
+            shape (num_frames,)
+        '''
+        return self._right_knee_angle
 
 class FileHandler():
     '''
