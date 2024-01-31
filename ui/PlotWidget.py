@@ -71,7 +71,6 @@ class MultiPlot(QWidget):
             plot_curves = plot.num_curves
             plot.set_data(data[:, curve_offset:curve_offset + plot_curves])
             curve_offset += plot_curves
-        # self.plot_widgets[0].set_data(data)
 
 class MatplotCanvas(FigureCanvasQTAgg):
     '''
