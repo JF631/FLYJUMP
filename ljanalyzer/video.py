@@ -122,6 +122,18 @@ class Video(QRunnable):
 
     def __ground_contact(self, prev_foot_pos:np.ndarray,
                          curr_foot_pos:np.ndarray):
+        '''
+        Tries to detect if a foot is on ground.
+        As it uses velocity as main parameter for detection, at least two foot
+        positions are needed.
+
+        Parameters
+        ----------
+        prev_foot_pos : np.ndarray
+            first foot pos
+        curr_foot_pos : np.ndarray
+            second foot pos
+        '''
         frames_to_consider = 2
         diff = curr_foot_pos - prev_foot_pos
         diff /= (frames_to_consider / self.__frame_rate)
@@ -152,7 +164,6 @@ class Video(QRunnable):
             self.__video_completed.set()
             raise GeneralException(f"""OpenCV could not read from video file
                                    {path}""")
-        # cv2.imshow("Video", first_frame)
         frame = Frame(data)
         self.signals.update_frame.emit(frame)
         cap.release()
@@ -175,7 +186,6 @@ class Video(QRunnable):
             self.jump_to_frame(frame)
         while self.__cap.isOpened():
             if self.abort.get() or self.__stop_flag:
-                print("terminate")
                 self.terminate()
                 break
             if self.__playback:
@@ -280,7 +290,6 @@ class Video(QRunnable):
                 print("video ended or an error occurred")
                 break
             self.__frame_buffer.add(frame)
-            # cv2.imshow("Video", frame)
             if (cv2.waitKey(0) &
                    0xFF == ord('q')):
                 break
@@ -301,6 +310,7 @@ class Video(QRunnable):
         out = cv2.VideoWriter(self.__output_path, fourcc, 30, (self.dims[1],
                                                                self.dims[0]))
         playback = False
+        hip_height = []
         lost_frames = 0
         velocity_frames = 2
         foot_pos = np.empty((2,2), dtype='f4')
@@ -343,6 +353,7 @@ class Video(QRunnable):
                     cv2.putText(frame.data(), f'FPS: {fps:.2f} frame: {analyzed_counter}',
                                 (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1,
                                 (0, 0, 255), 2)
+                    hip_height.append(1 - frame.hip_pos()[1])
                     frame_params = np.hstack((
                         1 - foot_pos[1], #foot height
                         1 - frame.hip_pos().reshape(-1, 1)[1], # hip height
@@ -362,7 +373,8 @@ class Video(QRunnable):
         frame.clear()
         lost_frames = (1 - (counter / self.__frame_count)) * 100
         param_file.close()
-        tkf_frame = self.takeoff_frame(full=False)
+        tkf_frame = self.takeoff_frame(hip_height=hip_height,
+                                       full=False)
         if tkf_frame:
             print(f"takeoff detected at {tkf_frame}")
             param_file.add_metadata(('takeoff', tkf_frame))
@@ -487,7 +499,7 @@ class Video(QRunnable):
             self.signals.error.emit(self.get_output_path())
             return None
         param_file = ParameterFile(analysis_path)
-        if not hip_height:
+        if hip_height is None:
             param_file.load()
             hip_height = param_file.get_hip_height()
         total_error = 100
