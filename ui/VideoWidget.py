@@ -12,8 +12,11 @@ class VideoWidget(QWidget):
         self.video_label.show()
         self.video_label.setSizePolicy(QSizePolicy.Expanding,
                                        QSizePolicy.Expanding)
+        self.video_label.setScaledContents(False)
         layout  = QVBoxLayout()
         layout.addWidget(self.video_label)
+        self.current_pixmap = None
+        self.current_frame = None
         if video_signals:
             self.connect_signals(video_signals)
 
@@ -24,19 +27,27 @@ class VideoWidget(QWidget):
 
     @pyqtSlot(Frame)
     def update(self, frame: Frame):
-        height, width, channels = frame.dims
-        bytes_per_line = channels * width
-        q_image = QImage(frame.to_rgb(), width, height, bytes_per_line,
-                         QImage.Format_RGB888)
-        q_pixmap = QPixmap.fromImage(q_image)
-        self.video_label.setPixmap(q_pixmap.scaled(
-            self.video_label.size(),aspectRatioMode=Qt.KeepAspectRatio))
+        self.current_frame = frame
+        self.set_image()
 
     def resizeEvent(self, event):
+        super().resizeEvent(event)
         self.update_label_size()
 
+    def set_image(self):
+        height, width, channels = self.current_frame.dims
+        bytes_per_line = channels * width
+        q_image = QImage(self.current_frame.to_rgb(), width, height,
+                         bytes_per_line, QImage.Format_RGB888)
+        self.current_pixmap = QPixmap.fromImage(q_image)
+        self.video_label.setPixmap(self.current_pixmap.scaled(
+            self.video_label.size(),aspectRatioMode=Qt.KeepAspectRatio))
+
     def update_label_size(self):
-        self.video_label.resize(self.size())
+        size = self.size()
+        self.video_label.resize(size)
+        if self.current_pixmap:
+            self.set_image()
 
     def disconnect_signals(self):
         self.video_signals.update_frame.disconnect(self.update)
