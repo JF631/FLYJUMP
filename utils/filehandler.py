@@ -10,6 +10,7 @@ from datetime import datetime
 
 import h5py
 import numpy as np
+import matplotlib.pyplot as plt
 
 from ljanalyzer.frame import Frame
 
@@ -199,7 +200,30 @@ class ParameterFile():
             self._right_foot_pos = np.array(right_foot_y)
             self._right_knee_angle = np.array(right_knee_angle)
             self._left_knee_angle = np.array(left_knee_angle)
-    
+            self.plot()
+
+    def plot(self):
+        plt.figure()
+        plt.xlabel("t [frames]")
+        plt.ylabel("height [norm. pix]")
+        plt.plot(self._hip_height, label='Hip')
+        plt.plot(self._left_foot_pos, label="Left foot")
+        plt.plot(self._right_foot_pos, label="Right foot")
+        plt.legend()
+        file_name ='heights.png'
+        plt.savefig(file_name)
+
+        plt.figure()
+        plt.xlabel("t [frames]")
+        plt.ylabel("angle [degree]")
+        plt.plot(self._right_knee_angle, label='Right knee')
+        plt.plot(self._left_knee_angle, label="Left knee")
+        plt.legend()
+        file_name ='angles.png'
+        plt.savefig(file_name)
+
+
+
     def get_hip_height(self):
         '''
         Relative hip height over time.
