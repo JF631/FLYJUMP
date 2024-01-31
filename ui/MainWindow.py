@@ -1,7 +1,7 @@
 '''
 This file contains the Mainwindow that is shown on Application start up.
 
-Ui files were created using Qt Designer and then translated to python file 
+Ui files were created using Qt Designer and then translated to python files 
 using pyuic5.
 
 Ui Files for this Window:
@@ -12,13 +12,15 @@ Ui Files for this Window:
 Author: Jakob Faust (software_jaf@mx442.de)
 Date: 2023-10-28
 '''
-from PyQt5.QtWidgets import QMainWindow, QFileDialog, QVBoxLayout, QMessageBox
+from PyQt5.QtWidgets import QMainWindow, QFileDialog, QVBoxLayout, QMessageBox, QLabel
 from PyQt5.QtCore import Qt, QThreadPool, pyqtSlot
+from PyQt5.QtGui import QPixmap
 
 from .Ui_MainWindow import Ui_MainWindow
 from .VideoProgressWidget import VideoProgressBar, VideoProgessArea
 from .PlotWidget import MultiPlot, MatplotCanvas
 from .VideoWidget import VideoWidget
+from .DroneControlDialog import DroneControlDialog
 from ljanalyzer.video import Video
 from utils.controlsignals import ControlSignals, SharedBool
 from utils.filehandler import FileHandler, ParameterFile
@@ -36,6 +38,8 @@ class MainWindow(QMainWindow):
             self.choose_video_dialog)
         self.ui.action_load_analysis.triggered.connect(
             self.choose_analysis_dialog)
+        self.ui.action_control_drone.triggered.connect(
+            self.show_drone_control)
         self.thread_pool = QThreadPool.globalInstance()
         self.current_video = None
         FileHandler.create_general_structure()
@@ -51,24 +55,39 @@ class MainWindow(QMainWindow):
         #main video widget
         self.video_widget = VideoWidget(parent=self.ui.main_video)
         video_area = QVBoxLayout(self.ui.main_video)
+        self.logo_label = QLabel(self.ui.main_video)
+        logo = QPixmap('C:/Users/jakob/Downloads/logo-4.png')
+        logo = logo.scaled(512, 512, Qt.KeepAspectRatio)
+        self.logo_label.setPixmap(logo)
+        self.logo_label.setAlignment(Qt.AlignCenter)
+        video_area.addWidget(self.logo_label)
         video_area.addWidget(self.video_widget)
+        self.video_widget.hide()
         self.ui.main_video.setLayout(video_area)
-        #matplot widget
-        self.matplot_widget = MatplotCanvas(self.ui.result_area,
-                                            x_label='t[frames]',
-                                            y_label='height[norm. pixel]',
-                                            control_signals=self.control_signals)
-        self.matplot_angle = MatplotCanvas(self.ui.result_area,
-                                           x_label='t[frames]',
-                                           y_label='angle[degree]',
-                                           control_signals=self.control_signals)
-        result_area = QVBoxLayout(self.ui.result_area)
-        result_area.addWidget(self.matplot_widget, stretch=1)
-        result_area.addWidget(self.matplot_angle, stretch=1)
+        #matplot widgets
+        self.result_area = QVBoxLayout(self.ui.result_area)
+        self.matplot_widget = None
+        self.matplot_angle = None
         #analysis progressbar
         self.progressbar_area = VideoProgessArea(self.ui.result_area)
-        result_area.addWidget(self.progressbar_area)
-        self.ui.result_area.setLayout(result_area)
+        self.result_area.addWidget(self.progressbar_area)
+        self.ui.result_area.setLayout(self.result_area)
+
+    def __add_matplot_ui(self):
+        self.matplot_widget = MatplotCanvas(
+            self.ui.result_area,
+            x_label='t[frames]', y_label='height[norm. pixel]',
+            control_signals=self.control_signals)
+        self.matplot_angle = MatplotCanvas(
+            self.ui.result_area,
+            x_label='t[frames]', y_label='angle[degree]',
+            control_signals=self.control_signals)
+        self.result_area.addWidget(self.matplot_widget, stretch=1)
+        self.result_area.addWidget(self.matplot_angle, stretch=1)
+
+    def show_drone_control(self):
+        control_dialog = DroneControlDialog(self)
+        control_dialog.show()
 
     def __start_video_analaysis(self, file_names):
         '''
@@ -84,6 +103,10 @@ class MainWindow(QMainWindow):
             return
         if not self.video_widget:
             return
+        if self.logo_label:
+            self.logo_label.hide()
+            self.logo_label = None
+        self.video_widget.show()
         self.progressbar_area.clear()
         if self.current_video:
             self.current_video.stop()
@@ -120,6 +143,12 @@ class MainWindow(QMainWindow):
         '''
         if not file_names:
             return
+        if self.logo_label:
+            self.logo_label.hide()
+            self.logo_label = None
+        self.video_widget.show()
+        if not self.matplot_angle or not self.matplot_widget:
+            self.__add_matplot_ui()
         param_file = ParameterFile(file_names[0])
         param_file.load()
         takeoff_frame = param_file.get_takeoff_frame()

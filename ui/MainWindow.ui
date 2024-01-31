@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>905</width>
+    <width>749</width>
     <height>596</height>
    </rect>
   </property>
@@ -31,7 +31,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>905</width>
+     <width>749</width>
      <height>22</height>
     </rect>
    </property>
@@ -42,7 +42,14 @@
     <addaction name="action_choose_video_file"/>
     <addaction name="action_load_analysis"/>
    </widget>
+   <widget class="QMenu" name="menuDrone">
+    <property name="title">
+     <string>Drone</string>
+    </property>
+    <addaction name="action_control_drone"/>
+   </widget>
    <addaction name="menuFile"/>
+   <addaction name="menuDrone"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="action_choose_video_file">
@@ -59,6 +66,11 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+L</string>
+   </property>
+  </action>
+  <action name="action_control_drone">
+   <property name="text">
+    <string>Control</string>
    </property>
   </action>
  </widget>
