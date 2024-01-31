@@ -5,3 +5,6 @@ psutil
 pyqt5
 PythonQwt
 h5py
+#drone related
+pymavlink
+pyserial

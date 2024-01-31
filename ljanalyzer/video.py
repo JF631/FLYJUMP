@@ -12,9 +12,10 @@ import time
 import cv2
 from PyQt5.QtCore import QRunnable, QObject, pyqtSignal
 import numpy as np
+import matplotlib.pyplot as plt
 
 from utils.exception import FileNotFoundException, GeneralException
-from utils.controlsignals import SharedBool
+from utils.controlsignals import SharedBool, ControlSignals
 from utils.filehandler import ParameterFile, FileHandler
 from .framebuffer import FrameBuffer
 from .frame import Frame
@@ -55,8 +56,8 @@ class VideoSignals(QObject):
         In the example above [a11, a21, a31] will be added to the first plot, 
         first graph.
     '''
-    finished = pyqtSignal()
-    error = pyqtSignal()
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
     progress = pyqtSignal(int)
     update_frame = pyqtSignal(Frame)
     update_frame_parameters = pyqtSignal(np.ndarray)
@@ -72,37 +73,67 @@ class Video(QRunnable):
         to a buffer.
 
         2) Read from the same buffer and perform pose detection.
-
+    
+    Furthermore, videos can simply be played / rewind / forwarded.
+    The visualization is NOT part of this class.
+    In order to visualize video frames you need to connect to this class'
+    update_frame(Frame) signal and visualize the emitted frames on your own.
+    
+    The analysis results are published via the 
+    update_frame_parameters(np.ndarray) signal.
+    For detailed explanation see above.
 
     Parameters
     ----------
     path : str
         path to video file.
+    abort : SharedBool
+        whenever this bool turns True, all running threads are tried to be
+        interrupted.
+        Implementation is based based on C++'s std::atomic<bool>.
+        
+
     '''
     def __init__(self, path:str, abort: SharedBool) -> None:
         super().__init__()
+        self.signals = VideoSignals()
+        self.control_signals = None
         self.__frame_count = 0
         self.__frame_rate = 0
         self.dims = (0, 0, 0)
+        self.__stop_flag = False
         self.__open(path)
         self.__path = path
-        self.__output_path = ''
-        self.__detector = PoseDetector(Input.VIDEO, EvalType.REALTIME)
+        self.__output_path = path
+        self.__detector = PoseDetector(Input.VIDEO, EvalType.FULL)
         self.__frame_buffer = FrameBuffer(self.__frame_count, self.dims,
                                           maxsize=2048, lock=True)
         self.__video_completed = threading.Event()
         self.abort = abort
-        self.signals = VideoSignals()
+        self.__playback = False
+        self.__cap: cv2.VideoCapture = None
 
     def terminate(self)->None:
         '''
         Stop running analysis.
         '''
-        print("trying to abort analysis")
-        self.signals.finished.emit()
-    
-    def __ground_contact(self, prev_foot_pos: np.ndarray, 
+        print(f"trying to abort analysis: {self.get_output_path()}")
+        self.signals.error.emit(self.get_output_path())
+
+    def __ground_contact(self, prev_foot_pos:np.ndarray,
                          curr_foot_pos:np.ndarray):
+        '''
+        Tries to detect if a foot is on ground.
+        As it uses velocity as main parameter for detection, at least two foot
+        positions are needed.
+
+        Parameters
+        ----------
+        prev_foot_pos : np.ndarray
+            first foot pos
+        curr_foot_pos : np.ndarray
+            second foot pos
+        '''
         frames_to_consider = 2
         diff = curr_foot_pos - prev_foot_pos
         diff /= (frames_to_consider / self.__frame_rate)
@@ -111,7 +142,8 @@ class Video(QRunnable):
 
     def __open(self, path:str):
         '''
-        Tries to open the video file, reads metadata and displays the first frame
+        Tries to open the video file, reads metadata and displays the first
+        frame
 
         Parameters
         ----------
@@ -127,13 +159,120 @@ class Video(QRunnable):
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.dims = (height, width, 3)
-        valid, _ = cap.read()
+        valid, data = cap.read()
         if not valid:
             self.__video_completed.set()
             raise GeneralException(f"""OpenCV could not read from video file
                                    {path}""")
-        # cv2.imshow("Video", first_frame)
+        frame = Frame(data)
+        self.signals.update_frame.emit(frame)
         cap.release()
+
+    def play(self, frame = None):
+        '''
+        starts video playback for the current video.
+        
+        Parameters
+        ----------
+        frame : int | None
+            if a number is given, the video will jump to this frame number before playback.
+            Otherwise, it will just start from the beginning.
+        '''
+        self.__cap = cv2.VideoCapture(self.__path)
+        self.__playback = True
+        current_frame = Frame()
+        if frame:
+            self.__playback = False
+            self.jump_to_frame(frame)
+        while self.__cap.isOpened():
+            if self.abort.get() or self.__stop_flag:
+                self.terminate()
+                break
+            if self.__playback:
+                valid, frame = self.__cap.read()
+                if not valid:
+                    break
+                current_frame.update(frame)
+                self.signals.update_frame.emit(current_frame)
+            if (cv2.waitKey(int(self.__frame_rate)) &
+                   0xFF == ord('q')):
+                self.terminate()
+                break
+        self.__cap.release()
+        cv2.destroyAllWindows()
+
+    def rewind(self):
+        '''
+        rewinds currently playing video by one frame.
+        '''
+        self.pause()
+        if not self.__cap:
+            return
+        current_frame = self.__cap.get(cv2.CAP_PROP_POS_FRAMES)
+        current_frame -= 1
+        if self.control_signals:
+            self.control_signals.jump_to_frame.emit(int(current_frame - 1))
+        else:
+            self.jump_to_frame(current_frame - 1)
+
+    def forward(self):
+        '''
+        forwards currently playing video by one frame. 
+        '''
+        self.pause()
+        if not self.__cap:
+            return
+        current_frame = self.__cap.get(cv2.CAP_PROP_POS_FRAMES)
+        current_frame += 1
+        if self.control_signals:
+            self.control_signals.jump_to_frame.emit(int(current_frame))
+        else:
+            self.jump_to_frame(current_frame)
+
+    def toggle(self):
+        '''
+        plays / pauses video playback.
+        '''
+        self.__playback = not self.__playback
+
+    def pause(self):
+        '''
+        pauses video playback.
+        '''
+        self.__playback = False
+
+    def stop(self):
+        '''
+        stops video playback.
+        '''
+        print("stop invoked")
+        self.__cap.release()
+        self.__frame_buffer
+        self.__stop_flag = True
+    
+    def jump_to_frame(self, frame):
+        '''
+        Jumps to a certain frame in video playback.
+        
+        Parameters
+        ----------
+        frame : int
+            frame number to which the player should jump.
+        cap : cv2.VideoCapture
+            openCV video capture object.
+            if None is provided, a new one for the current video object will
+            be created
+        '''
+        if frame > self.__frame_count or frame < 0:
+            return
+        if not self.__cap:
+            return
+        self.pause()
+        self.__cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
+        valid, frame = self.__cap.read()
+        if valid:
+            current_frame = Frame(frame)
+            self.signals.update_frame.emit(current_frame)
 
     def __read_video_file(self):
         '''
@@ -151,9 +290,8 @@ class Video(QRunnable):
                 print("video ended or an error occurred")
                 break
             self.__frame_buffer.add(frame)
-            # cv2.imshow("Video", frame)
             if (cv2.waitKey(0) &
-                    0xFF == ord('q')):
+                   0xFF == ord('q')):
                 break
         cap.release()
         print("released input")
@@ -172,13 +310,15 @@ class Video(QRunnable):
         out = cv2.VideoWriter(self.__output_path, fourcc, 30, (self.dims[1],
                                                                self.dims[0]))
         playback = False
+        hip_height = []
         lost_frames = 0
         velocity_frames = 2
         foot_pos = np.empty((2,2), dtype='f4')
         foot_pos2 = np.empty((2,2), dtype='f4')
         counter = 0
+        analyzed_counter = 0
         frame = Frame()
-        param_file = ParameterFile(self.signals, self.get_filename())
+        param_file = ParameterFile(self.get_analysis_path(), self.signals)
         while True:
             if self.abort.get():
                 self.terminate()
@@ -197,7 +337,9 @@ class Video(QRunnable):
                     param_file.save(frame)
                     if counter == 0:
                         foot_pos = frame.foot_pos()
-                        if np.any(foot_pos > 1.0) or np.any(foot_pos < 0.0):
+                        hip_pos = frame.hip_pos()
+                        if (np.any(foot_pos > 1.0) or np.any(foot_pos < 0.0) or
+                            np.any(hip_pos > 1.0) or np.any(hip_pos < 0.0)):
                             continue
                     if (counter % velocity_frames) == 0:
                         foot_pos2 = frame.foot_pos()
@@ -208,9 +350,10 @@ class Video(QRunnable):
                         foot_pos = foot_pos2
                     end = time.time()
                     fps = 1 / (end - start)
-                    cv2.putText(frame.data(), f'FPS: {fps:.2f} frame: {counter}',
-                                (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, 
+                    cv2.putText(frame.data(), f'FPS: {fps:.2f} frame: {analyzed_counter}',
+                                (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1,
                                 (0, 0, 255), 2)
+                    hip_height.append(1 - frame.hip_pos()[1])
                     frame_params = np.hstack((
                         1 - foot_pos[1], #foot height
                         1 - frame.hip_pos().reshape(-1, 1)[1], # hip height
@@ -219,6 +362,7 @@ class Video(QRunnable):
                     self.signals.update_frame_parameters.emit(frame_params)
                     self.signals.update_frame.emit(frame)
                     out.write(frame.data())
+                    analyzed_counter += 1
                 counter += 1
                 self.update_progress(int((counter / self.__frame_count) * 100))
                 if cv2.waitKey(0) & 0xFF == ord('q'):
@@ -228,10 +372,16 @@ class Video(QRunnable):
         out.release()
         frame.clear()
         lost_frames = (1 - (counter / self.__frame_count)) * 100
+        param_file.close()
+        tkf_frame = self.takeoff_frame(hip_height=hip_height,
+                                       full=False)
+        if tkf_frame:
+            print(f"takeoff detected at {tkf_frame}")
+            param_file.add_metadata(('takeoff', tkf_frame))
         print(f"""video {self.__path} analyzed \n
               lost frames: {self.__frame_count - counter} 
               ({lost_frames:.2f}%)""")
-        self.signals.finished.emit()
+        self.signals.finished.emit(self.get_analysis_path())
         cv2.destroyAllWindows()
 
     def update_progress(self, current_progress: int):
@@ -274,8 +424,33 @@ class Video(QRunnable):
         -------
         path : str
             input video path.
+            (e.g. 'C:/Downloads/vid0.mp4')
         '''
         return self.__path
+    
+    def get_base_path(self)->str:
+        '''
+        returns input video path without file extension.
+
+        Returns
+        -------
+        path : str
+            input video path without file extension.
+            (e.g. 'C:/FLYJUMP/analysis/2023-01-01/vid0')
+        '''
+        return os.path.splitext(self.__output_path)[0]
+    
+    def get_analysis_path(self)->str:
+        '''
+        returns output analysis file path.
+
+        Returns
+        -------
+        path : str
+            output analysis file path
+            (e.g. 'C:/FLYJUMP/analysis/2023-01-01/vid0.hdf5').
+        '''
+        return self.get_base_path() + '.hdf5'
 
     def get_output_path(self)->str:
         '''
@@ -285,5 +460,118 @@ class Video(QRunnable):
         -------
         path : str
             output video path.
+            (e.g. 'C:/FLYJUMP/analysis/2023-01-01/vid0.mp4')
         '''
         return self.__output_path
+
+    def takeoff_frame(self, hip_height: np.ndarray = None, full = False):
+        '''
+        detects the frame that shows the takeoff image.
+        It uses the hip position, actually the hip height, to detect the takeoff.
+
+        Parameters
+        -----------
+        hip_height : np.ndarray
+            flat array holding the hip height over time.
+            (one value per frame).
+            If no array is given, the analysis must have already been
+            performed, so that an according .hdf5 file is present.
+            Then, the values can be extracted automatically from the analysis
+            file.
+        full : bool
+            also detect other frame candidates.
+            in error range of + or - 1% from the detected frame.
+
+        Returns
+        --------
+        if full = True: (frame, candidates[]) : (int, np.ndarray)
+            frame - that is most likely to be the takeoff frame,
+            candidates - holds all other frames that might be reasonable.
+        if full = False: frame : int
+            detected takeoff frame that is most likely
+        
+        if no frame is detected or an error occured: None is returned
+        '''
+        self.__open(self.__path)
+        analysis_path = self.get_analysis_path()
+        if not os.path.exists(analysis_path):
+            print(f"file not found: {analysis_path}!")
+            self.signals.error.emit(self.get_output_path())
+            return None
+        param_file = ParameterFile(analysis_path)
+        if hip_height is None:
+            param_file.load()
+            hip_height = param_file.get_hip_height()
+        total_error = 100
+        changing_points = (0,0)
+        if full:
+            possible_indices = []
+        runup_coeffs = []
+        jump_coeffs = []
+        for i in range(2, len(hip_height) - 2):
+            for j in range(i + 2, len(hip_height) - 4):
+                x_runup = np.arange(len(hip_height[:i]))
+                x_jump = np.arange(len(hip_height[i:j]))
+                x_landing = np.arange(len(hip_height[j:]))
+                hip_fit_runup, residuals_runup, _, _, _ = np.polyfit(
+                    x_runup,hip_height[:i], 1, full=True)
+                hip_fit_jump, residuals_jump, _, _, _ = np.polyfit(
+                    x_jump, hip_height[i:j], 2, full=True)
+                hip_fit_landing, residuals_landing, _, _, _ = np.polyfit(
+                    x_landing, hip_height[j:], 1, full=True)
+                fitting_error = (residuals_runup + residuals_jump +
+                                 residuals_landing)
+                if fitting_error and full:
+                    possible_indices.append(fitting_error[0])
+                '''
+                since we already know the fitted jumping curve must be of form
+                -ax^2 + bx + c, we know a = hip_fit_jump[0] < 0.
+                '''
+                if fitting_error < total_error and hip_fit_jump[0] < 0:
+                    total_error = fitting_error
+                    changing_points = (i,j)
+                    runup_coeffs = hip_fit_runup
+                    jump_coeffs = hip_fit_jump
+        if full:
+            possible_indices = np.array(possible_indices)
+            possible_indices = np.where(np.logical_and(
+                (possible_indices < (total_error + total_error*0.01)), 
+                (possible_indices > (total_error - total_error*0.01))))[0]
+        '''
+        TODO verify the following if statement makes sense and is reasonable.
+        It is meant to solve the problem that a takeoff is detected during the
+        runup.
+        '''
+        # if(full and (changing_points < possible_indices[-1])):
+        #     index = possible_indices[-1]
+        # print(f"changing points detected at {changing_points}")
+        hip_runup = np.poly1d(runup_coeffs)
+        hip_jump = np.poly1d(jump_coeffs)
+        x_runup = np.arange(0, changing_points[0])
+        x_jump = np.arange(changing_points[0], changing_points[1])
+        hip_runup = np.poly1d(runup_coeffs)
+        hip_jump = np.poly1d(jump_coeffs)
+        plt.xlabel("t [frames]")
+        plt.ylabel("height [norm. pix]")
+        plt.plot(hip_height, label='hip')
+        plt.plot(x_runup, hip_runup(x_runup), label="runup")
+        plt.plot(x_jump, hip_jump(np.arange(len(x_jump))), label="jump")
+        plt.legend()
+        file_name ='test.png'
+        plt.savefig(file_name)
+
+        if full:
+            return (changing_points, possible_indices)
+        return changing_points
+
+    def set_control_signals(self, control_signals: ControlSignals):
+        ''''
+        sets program control signals to current video.
+
+        Parameters
+        ----------
+        control_signals : ControlSignals
+            programm control signals
+        '''
+        self.control_signals = control_signals
+        self.control_signals.jump_to_frame.connect(self.jump_to_frame)
