@@ -87,7 +87,9 @@ class MainWindow(QMainWindow):
 
     def show_drone_control(self):
         control_dialog = DroneControlDialog(self)
-        control_dialog.show()
+        control_dialog.setWindowFlag(Qt.WindowMinimizeButtonHint, True)
+        control_dialog.setWindowFlag(Qt.WindowMaximizeButtonHint, True)
+        control_dialog.exec_()
 
     def __start_video_analaysis(self, file_names):
         '''
