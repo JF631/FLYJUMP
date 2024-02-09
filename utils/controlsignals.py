@@ -41,6 +41,10 @@ class SharedBool:
         with self.__lock:
             return self.__value
 
+class DroneSignals(QObject):
+    status_text = pyqtSignal(str)
+    connection_changed = pyqtSignal(bool)
+
 class ControlSignals(QObject):
     '''
     Defines PyQt Signals that are used to control the overall software flow.
