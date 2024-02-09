@@ -294,8 +294,13 @@ class FileHandler():
     Where date is the ANALYSIS DATE
     '''
     __OUTPUT_FOLDER = "analysis"
+    __ICON_FOLDER = "ui/icons"
     def __init__(self) -> None:
         pass
+
+    @staticmethod
+    def get_icon_path() -> str:
+        return os.path.join(os.getcwd(), FileHandler.__ICON_FOLDER)
 
     @staticmethod
     def create_general_structure() -> bool:
