@@ -45,6 +45,7 @@ class DroneSignals(QObject):
     status_text = pyqtSignal(str)
     connection_changed = pyqtSignal(bool)
     vehicle_gps_status = pyqtSignal(dict)
+    vehicle_battery_status = pyqtSignal(dict)
 
 class ControlSignals(QObject):
     '''

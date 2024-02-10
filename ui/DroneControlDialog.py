@@ -40,6 +40,8 @@ class DroneControlDialog(QDialog):
         self.ui.up_btn.clicked.connect(self.fly_forward)
         self.ui.down_btn.clicked.connect(self.fly_backwards)
         self.drone_signals.status_text.connect(self.update_error_label)
+        self.drone_signals.vehicle_battery_status.connect(
+            self.update_battery_info)
         self.drone_signals.connection_changed.connect(
             self.change_connection_status)
         self.drone_signals.vehicle_gps_status.connect(self.update_params)
@@ -60,18 +62,25 @@ class DroneControlDialog(QDialog):
         self.ui.label_velocity.setText(str(gnd_speed))
         self.ui.label_satelites.setText(str(sat_count))
         self.ui.label_fix_type.setText(str(fix_type))
-    
+
+    @pyqtSlot(dict)
+    def update_battery_info(self, battery_status):
+        voltage = battery_status.get('voltages')[0] / 1e3
+        consumed_current = battery_status.get('current_consumed')
+        self.ui.label_voltage.setText(str(voltage))
+        self.ui.label_consumed_current.setText(str(consumed_current))
+
     @pyqtSlot(bool)
     def change_connection_status(self, connetcted: bool):
         btn_text = 'Connection Lost'
         if connetcted:
             btn_text = 'Connected'
         self.ui.connect_button.setText(btn_text)
-    
+
     @pyqtSlot()
     def clear_check_messages(self):
         self.ui.label_arm_checks.clear()
-    
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
         key = event.key()
         if key == Qt.Key_W:

@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>347</width>
-    <height>328</height>
+    <width>499</width>
+    <height>483</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -19,7 +19,7 @@
      <property name="orientation">
       <enum>Qt::Horizontal</enum>
      </property>
-     <widget class="QWidget" name="">
+     <widget class="QWidget" name="layoutWidget">
       <layout class="QVBoxLayout" name="verticalLayout_2">
        <item>
         <spacer name="verticalSpacer">
@@ -145,7 +145,7 @@
       <property name="orientation">
        <enum>Qt::Vertical</enum>
       </property>
-      <widget class="QWidget" name="">
+      <widget class="QWidget" name="layoutWidget">
        <layout class="QVBoxLayout" name="verticalLayout_3">
         <item>
          <widget class="QLabel" name="label_clear_messages">
@@ -194,8 +194,8 @@
             <rect>
              <x>0</x>
              <y>0</y>
-             <width>124</width>
-             <height>70</height>
+             <width>185</width>
+             <height>125</height>
             </rect>
            </property>
            <layout class="QVBoxLayout" name="verticalLayout">
@@ -307,6 +307,44 @@
        <property name="title">
         <string>Battery</string>
        </property>
+       <layout class="QVBoxLayout" name="verticalLayout_5">
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_9">
+          <item>
+           <widget class="QLabel" name="label_voltage">
+            <property name="text">
+             <string>voltage</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_voltage_v">
+            <property name="text">
+             <string>[V]</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_10">
+          <item>
+           <widget class="QLabel" name="label_consumed_current">
+            <property name="text">
+             <string>consumed</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_consumed_current_mah">
+            <property name="text">
+             <string>[mAh]</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
       </widget>
      </widget>
     </widget>
