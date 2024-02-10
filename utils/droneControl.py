@@ -11,9 +11,11 @@ Date: 2024-01-27
 import time
 from dataclasses import dataclass
 import threading
+from enum import Enum
 
 from pymavlink import mavutil
 from PyQt5.QtCore import QThread
+from PyQt5.QtWidgets import QMessageBox
 
 from utils.controlsignals import DroneSignals
 
@@ -28,6 +30,7 @@ class Messages:
     STATUSTEXT = 'STATUSTEXT'
     ACKNOWLEDGED = 'COMMAND_ACK'
     TIME = 'SYSTEM_TIME'
+    BATTERY_INFO = 'BATTERY_STATUS'
 
 
 @dataclass
@@ -37,6 +40,15 @@ class Commands:
     RETURN_TO_LAUNCH = 'MAV_CMD_NAV_RETURN_TO_LAUNCH'
     TAKEOFF = 'MAV_CMD_NAV_TAKEOFF'
 
+class Mode(Enum):
+    '''
+    Defines the flying modes that the software supports 
+    Supported modes are: UNKNOWN, FLYING, LANDING, RTL
+    '''
+    UNKNOWN = 0
+    FLYING = 1
+    LANDING = 2
+    RTL = 3
 
 class DroneConnection(QThread):
     '''
@@ -76,7 +88,7 @@ class DroneConnection(QThread):
         Baudrate is dafaulted for Telemetry Radio to 57600 baud/s.
         '''
         try:
-            return mavutil.mavlink_connection('COM11', baud=57600)
+            return mavutil.mavlink_connection('COM3', baud=57600)
         except Exception as e:
             self.signals.status_text.emit("No telemetry radio was found")
             print(f"failed to establish drone connection: {e}")
@@ -118,7 +130,7 @@ class DroneConnection(QThread):
             return
         messages_to_request = [Messages.ACKNOWLEDGED, Messages.GPS_INFO,
                                Messages.STATUSTEXT, Messages.SYS_STATUS,
-                               Messages.GPS_POS_GLOBAL]
+                               Messages.GPS_POS_GLOBAL, Messages.BATTERY_INFO]
         for message in messages_to_request:
             message_id = getattr(mavutil.mavlink, 'MAVLINK_MSG_ID_' + message)
             if frequency:
@@ -255,7 +267,7 @@ class DroneConnection(QThread):
         rtrn = self.get_msg(Messages.ACKNOWLEDGED, blocking=True, timeout=3)
         return rtrn
 
-    def __get_status(self):
+    def check_status(self):
         '''
         Tries to get status text from drone.
         Is always not blocking.
@@ -268,9 +280,15 @@ class DroneConnection(QThread):
         '''
         if not self.is_active():
             return
+        current_time = None
+        time_str = None
         msg = self.get_msg(Messages.STATUSTEXT, blocking=True, timeout=1)
         if msg and 'PreArm' in msg.text:
-            self.signals.status_text.emit(msg.text)
+            current_time = time.time()
+            current_time = (time.localtime(current_time))
+            time_str = time.strftime("%H:%M:%S", current_time)
+            rtrn = '[{}]: {}'.format(time_str, msg.text)
+            self.signals.status_text.emit(rtrn)
 
     def __receive_heartbeat(self, timeout=2):
         '''
@@ -344,6 +362,24 @@ class DroneConnection(QThread):
             velocity values (vx, vy, vz)
         d2x : List-like
             acceleration values (ax, ay, az)
+        
+        INFO
+        -----
+        the bitmask used in the function is read from right to left.
+        Moreover the mask is inverted (NAND link).
+        0 means the according value is used, 1 means the value is ignored.
+        Example:
+                    110111000111
+                             ^^^
+                             position disabled
+                          ^^^
+                          velocity enabled
+                       ^^^
+                       acceleration disabled
+                      ^
+                      bit 10 is UNUSED!!!
+                    ^^
+                    yaw and yaw rate are ignored
         '''
         if not self.is_active():
             return
@@ -354,14 +390,14 @@ class DroneConnection(QThread):
                 0,
                 self.connection.target_system,
                 self.connection.target_component,
-                int(9), #MAV_FRAME_LOCAL_NED
+                9, #MAV_FRAME_LOCAL_NED
                 int(0b110111000111), #use velocity
                 x[0], x[1], x[2], # x, y, z (m)
                 dx[0], dx[1], dx[2], # vx, vy, vz (m/s)
                 d2x[0], d2x[1], d2x[2], # ax, ay, az (m/s^2)
                 0, 0 # yaw (rad), yaw rate (rad/s) 
             ))
-    
+
     def prepare_status_message(self, gps_message, gps_raw_message):
         return {
             'velocity' :  gps_raw_message.get('vel') / 100, # in m/s 
@@ -390,13 +426,19 @@ class DroneConnection(QThread):
             gps_message = self.get_msg(Messages.GPS_INFO, blocking=False)
             gps_global = self.get_msg(Messages.GPS_POS_GLOBAL, blocking=False)
             if gps_message and gps_global:
-                gps_status = self.prepare_status_message(gps_global.to_dict(),
-                                                         gps_message.to_dict())
+                gps_status = self.prepare_status_message(
+                    gps_global.to_dict(),
+                    gps_message.to_dict())
                 self.signals.vehicle_gps_status.emit(gps_status)
+            battery_status = self.get_msg(Messages.BATTERY_INFO,
+                                          blocking=False)
+            if battery_status:
+                self.signals.vehicle_battery_status.emit(
+                    battery_status.to_dict())
             # if msg:
             #     print(msg)
-            self.__get_status()
-            # self.msleep(200)ö
+            self.check_status()
+            self.msleep(1000)
 
 
 class DroneControl():
@@ -409,6 +451,7 @@ class DroneControl():
         self.connection = drone_connection.connection
         self.signals = signals
         self.drone_worker = drone_connection
+        self.current_status = Mode.UNKNOWN
         self.connect_signals_and_slots()
 
     def connect_signals_and_slots(self):
@@ -433,7 +476,24 @@ class DroneControl():
         print(result)
     
     def return_home(self):
-        ack = self.drone_worker.return_to_home()
+        '''
+        Initiates return to home (start position) mode.
+        '''
+        if self.current_status != Mode.FLYING:
+            QMessageBox.information(
+                        None, "RTL not initiated",
+                        "For returning home, the drone needs to fly first :)",
+                        QMessageBox.Ok)
+            return
+        rtl_ack = self.drone_worker.return_to_home()
+        if rtl_ack and rtl_ack.command == 20:
+            if rtl_ack.result != 0:
+                QMessageBox.critical(
+                        None, "Landing not initiated",
+                        "RTL mode command has been rejected by the drone",
+                        QMessageBox.Ok)
+                return
+            self.current_status = Mode.RTL
 
     def disarm(self):
         '''
@@ -455,13 +515,37 @@ class DroneControl():
             heigth in meters to which the drone will climb.
         '''
         guided_ack = self.drone_worker.enter_guided_mode()
-        ack = self.drone_worker.takeoff(height)
-        if not ack:
-            ack = self.drone_worker.takeoff(height)
-        print(ack)
-    
+        if (guided_ack and guided_ack.command == 176 and 
+            guided_ack.result == 0):
+            takeoff_ack = self.drone_worker.takeoff(height)
+            if takeoff_ack and takeoff_ack.command == 22:
+                if takeoff_ack.result == 0:
+                    self.current_status = Mode.FLYING
+                    return
+                if takeoff_ack.result == 4:
+                    QMessageBox.critical(
+                        None, "Takeoff failed",
+                        """The takeoff has been rejected by the drone, please
+                        check the prearm check list""",
+                        QMessageBox.Ok)
+
     def land(self):
-        self.drone_worker.land()
+        if self.current_status != Mode.FLYING:
+            QMessageBox.information(
+                        None, "Landing not initiated",
+                        "For landing, the drone needs to fly first :)",
+                        QMessageBox.Ok)
+            return
+        land_ack = self.drone_worker.land()
+        if land_ack and land_ack.command == 21:
+            if land_ack.result != 0:
+                QMessageBox.critical(
+                        None, "Landing not initiated",
+                        "The landing command has been rejected by the drone",
+                        QMessageBox.Ok)
+                return
+            self.current_status = Mode.LANDING
+
 
     def fly_forward(self, velocity):
         '''
@@ -541,8 +625,6 @@ class DroneControl():
             ack = self.drone_worker.get_msg(Messages.ACKNOWLEDGED,
                                             blocking=True, timeout=1)
             if ack and ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                    status = self.drone_worker.get_one_time_msg(
-                        Messages.STATUSTEXT, blocking=False)
-                    if status and 'PreArm' in status.text:
-                        self.signals.status_text.emit(status.text)
-            
+                self.drone_worker.check_status()
+            time.sleep(1)
+
