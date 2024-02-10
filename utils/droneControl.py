@@ -10,6 +10,7 @@ Date: 2024-01-27
 '''
 import time
 from dataclasses import dataclass
+import threading
 
 from pymavlink import mavutil
 from PyQt5.QtCore import QThread
@@ -19,6 +20,7 @@ from utils.controlsignals import DroneSignals
 @dataclass
 class Messages:
     GPS_INFO = 'GPS_RAW_INT'
+    GPS_POS_GLOBAL = 'GLOBAL_POSITION_INT'
     HEARTBEAT = 'HEARTBEAT'
     CMD_RESULT = 'MAV_RESULT'
     SYS_STATUS = 'SYS_STATUS'
@@ -45,11 +47,19 @@ class DroneConnection(QThread):
         super().__init__()
         self.signals = signals
         self.connection = self.__establish()
-        self.request_messages(frequency=3)
+        self.heartbeat_thread: threading.Thread = None
+        self.request_messages(frequency=10)
+    
+    def close(self):
+        try:
+            if self.is_active():
+                self.connection.close()
+        except:
+            pass
 
     def is_active(self):
         '''
-        checks if valid connectio object is present.
+        checks if valid connection object is present.
 
         Returns
         -------
@@ -80,14 +90,16 @@ class DroneConnection(QThread):
             return
         system_type = mavutil.mavlink.MAV_TYPE_GCS
         autopilot_type = mavutil.mavlink.MAV_AUTOPILOT_INVALID
-        self.connection.mav.heartbeat_send(
-            system_type,
-            autopilot_type,
-            0,  # MAV_MODE_FLAG, set to 0 for GCS
-            0,  # Custom mode, not used for GCS
-            0,  # System status, not used for GCS
-            0  # MAVLink version
-        )
+        while True:
+            self.connection.mav.heartbeat_send(
+                system_type,
+                autopilot_type,
+                0,  # MAV_MODE_FLAG, set to 0 for GCS
+                0,  # Custom mode, not used for GCS
+                0,  # System status, not used for GCS
+                0  # MAVLink version
+            )
+            time.sleep(1)
 
     def request_messages(self, frequency=0):
         '''
@@ -105,7 +117,8 @@ class DroneConnection(QThread):
         if not self.is_active():
             return
         messages_to_request = [Messages.ACKNOWLEDGED, Messages.GPS_INFO,
-                               Messages.STATUSTEXT, Messages.SYS_STATUS]
+                               Messages.STATUSTEXT, Messages.SYS_STATUS,
+                               Messages.GPS_POS_GLOBAL]
         for message in messages_to_request:
             message_id = getattr(mavutil.mavlink, 'MAVLINK_MSG_ID_' + message)
             if frequency:
@@ -338,16 +351,24 @@ class DroneConnection(QThread):
             return
         self.connection.mav.send(
             mavutil.mavlink.MAVLink_set_position_target_local_ned_message(
-                time.time() * 1e3,
+                0,
                 self.connection.target_system,
                 self.connection.target_component,
-                9, #MAV_FRAME_LOCAL_NED
+                int(9), #MAV_FRAME_LOCAL_NED
                 int(0b110111000111), #use velocity
-                *x, # x, y, z (m)
-                *dx, # vx, vy, vz (m/s)
-                *d2x, # ax, ay, az (m/s^2)
+                x[0], x[1], x[2], # x, y, z (m)
+                dx[0], dx[1], dx[2], # vx, vy, vz (m/s)
+                d2x[0], d2x[1], d2x[2], # ax, ay, az (m/s^2)
                 0, 0 # yaw (rad), yaw rate (rad/s) 
             ))
+    
+    def prepare_status_message(self, gps_message, gps_raw_message):
+        return {
+            'velocity' :  gps_raw_message.get('vel') / 100, # in m/s 
+            'relative_alt' : gps_message.get('relative_alt') / 1e3,
+            'satelites' : gps_raw_message.get('satellites_visible'),
+            'fix_type' : gps_raw_message.get('fix_type')
+        }
 
     def run(self):
         '''
@@ -359,15 +380,23 @@ class DroneConnection(QThread):
             self.signals.connection_changed.emit(False)
             self.msleep(1000)
         self.signals.connection_changed.emit(True)
+        self.heartbeat_thread = threading.Thread(name='heartbeatThread',
+                                            target=self.__publish_heartbeat)
+        self.heartbeat_thread.start()
         while not self.isInterruptionRequested():
-            self.__publish_heartbeat()
             msg = self.__receive_heartbeat(timeout=5)
             if not msg:
                 self.signals.connection_changed.emit(False)
+            gps_message = self.get_msg(Messages.GPS_INFO, blocking=False)
+            gps_global = self.get_msg(Messages.GPS_POS_GLOBAL, blocking=False)
+            if gps_message and gps_global:
+                gps_status = self.prepare_status_message(gps_global.to_dict(),
+                                                         gps_message.to_dict())
+                self.signals.vehicle_gps_status.emit(gps_status)
             # if msg:
             #     print(msg)
             self.__get_status()
-            self.msleep(200)
+            # self.msleep(200)ö
 
 
 class DroneControl():
@@ -434,14 +463,23 @@ class DroneControl():
     def land(self):
         self.drone_worker.land()
 
-    def fly_forward(self):
+    def fly_forward(self, velocity):
         '''
-        Fly the drone forward at 1 m/s (positive x direction)
+        Fly the drone forward at a given speed (positive x direction)
+        Speed is limitted between 0m/s and 8m/s
+        
+        Parameters
+        ----------
+        velocity : int
+            velocity at which the drone should fly forward.
         '''
+        if velocity < 0 or velocity > 8:
+            return
         pos = (0, 0, 0)
-        vel = (1, 0, 0)
+        vel = (velocity, 0, 0)
         acc = (0, 0, 0)
         self.drone_worker.ned_command(pos, vel, acc)
+        time.sleep(0.33)
     
     def fly_backwards(self):
         '''

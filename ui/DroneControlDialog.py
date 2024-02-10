@@ -2,6 +2,8 @@ from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtWidgets import  QDialog, QWidget
 from PyQt5.QtGui import QIcon, QKeyEvent
 
+import threading
+
 from .Ui_DroneControlDialog import Ui_Dialog
 from utils.droneControl import DroneControl, DroneConnection
 from utils.controlsignals import DroneSignals
@@ -28,6 +30,7 @@ class DroneControlDialog(QDialog):
     
     def connect_signals_and_slots(self):
         self.finished.connect(self.on_dialog_closed)
+        self.ui.clear_msg_button.clicked.connect(self.clear_check_messages)
         self.ui.connect_button.clicked.connect(self.connect)
         self.ui.takeoff_button.clicked.connect(self.perform_takeoff)
         self.ui.land_button.clicked.connect(self.perform_landing)
@@ -39,6 +42,7 @@ class DroneControlDialog(QDialog):
         self.drone_signals.status_text.connect(self.update_error_label)
         self.drone_signals.connection_changed.connect(
             self.change_connection_status)
+        self.drone_signals.vehicle_gps_status.connect(self.update_params)
 
     @pyqtSlot(str)
     def update_error_label(self, text):
@@ -46,10 +50,16 @@ class DroneControlDialog(QDialog):
         text = current_msg + "\n" + text
         self.ui.label_arm_checks.setText(text)
 
-    @pyqtSlot(str)
-    def update_params(self, text):
-        print(text)
-        self.ui.label_gps.setText(text)
+    @pyqtSlot(dict)
+    def update_params(self, vehicle_status):
+        alt = vehicle_status.get('relative_alt') #in m
+        gnd_speed = vehicle_status.get('velocity') # in m/s
+        sat_count = vehicle_status.get('satelites')
+        fix_type = vehicle_status.get('fix_type')
+        self.ui.label_height.setText(str(alt))
+        self.ui.label_velocity.setText(str(gnd_speed))
+        self.ui.label_satelites.setText(str(sat_count))
+        self.ui.label_fix_type.setText(str(fix_type))
     
     @pyqtSlot(bool)
     def change_connection_status(self, connetcted: bool):
@@ -58,10 +68,14 @@ class DroneControlDialog(QDialog):
             btn_text = 'Connected'
         self.ui.connect_button.setText(btn_text)
     
+    @pyqtSlot()
+    def clear_check_messages(self):
+        self.ui.label_arm_checks.clear()
+    
     def keyPressEvent(self, event: QKeyEvent) -> None:
         key = event.key()
         if key == Qt.Key_W:
-            print("forward")
+            self.fly_forward()
         elif key == Qt.Key_S:
             self.fly_backwards()
         elif key == Qt.Key_A:
@@ -76,7 +90,9 @@ class DroneControlDialog(QDialog):
 
     def connect(self):
         self.drone_connection.start()
-        self.drone_control.run_arming_checks()
+        arm_check_thread = threading.Thread(name='armingChecks',
+                         target=self.drone_control.run_arming_checks)
+        arm_check_thread.start()
 
     def perform_takeoff(self):
         self.drone_control.takeoff(height=5)
@@ -94,7 +110,7 @@ class DroneControlDialog(QDialog):
         self.drone_control.land()
     
     def fly_forward(self):
-        self.drone_control.fly_forward()
+        self.drone_control.fly_forward(velocity=1)
     
     def fly_backwards(self):
         self.drone_control.fly_backwards()
@@ -107,3 +123,4 @@ class DroneControlDialog(QDialog):
     
     def on_dialog_closed(self):
         self.drone_connection.terminate()
+        self.drone_connection.close()
