@@ -21,31 +21,26 @@ from utils.controlsignals import DroneSignals
 
 @dataclass
 class Messages:
-    GPS_INFO = 'GPS_RAW_INT'
-    GPS_POS_GLOBAL = 'GLOBAL_POSITION_INT'
-    HEARTBEAT = 'HEARTBEAT'
-    CMD_RESULT = 'MAV_RESULT'
-    SYS_STATUS = 'SYS_STATUS'
-    ATTITUDE = 'ATTITUDE'   
-    STATUSTEXT = 'STATUSTEXT'
-    ACKNOWLEDGED = 'COMMAND_ACK'
-    TIME = 'SYSTEM_TIME'
-    BATTERY_INFO = 'BATTERY_STATUS'
-
-
-@dataclass
-class Commands:
-    ARM_DISARM = 'MAV_CMD_COMPONENT_ARM_DISARM'
-    PREARM_CHECKS = 'MAV_CMD_RUN_PREARM_CHECKS'
-    RETURN_TO_LAUNCH = 'MAV_CMD_NAV_RETURN_TO_LAUNCH'
-    TAKEOFF = 'MAV_CMD_NAV_TAKEOFF'
+    '''
+    Defines mavlink messages that are requested (regulary) from the drone.  
+    '''
+    GPS_INFO:str = 'GPS_RAW_INT'
+    GPS_POS_GLOBAL:str = 'GLOBAL_POSITION_INT'
+    HEARTBEAT:str = 'HEARTBEAT'
+    CMD_RESULT:str = 'MAV_RESULT'
+    SYS_STATUS:str = 'SYS_STATUS'
+    ATTITUDE:str = 'ATTITUDE'   
+    STATUSTEXT:str = 'STATUSTEXT'
+    ACKNOWLEDGED:str = 'COMMAND_ACK'
+    TIME:str = 'SYSTEM_TIME'
+    BATTERY_INFO:str = 'BATTERY_STATUS'
 
 class Mode(Enum):
     '''
     Defines the flying modes that the software supports 
-    Supported modes are: UNKNOWN, FLYING, LANDING, RTL
+    Supported modes are: GROUND, FLYING, LANDING, RTL
     '''
-    UNKNOWN = 0
+    GROUND = 0
     FLYING = 1
     LANDING = 2
     RTL = 3
@@ -58,9 +53,9 @@ class DroneConnection(QThread):
     def __init__(self, signals: DroneSignals) -> None:
         super().__init__()
         self.signals = signals
-        self.connection = self.__establish()
+        self.connection = None
+        self.serial_port = None
         self.heartbeat_thread: threading.Thread = None
-        self.request_messages(frequency=10)
     
     def close(self):
         try:
@@ -82,15 +77,26 @@ class DroneConnection(QThread):
             return False
         return True
 
-    def __establish(self):
+    def init_serial_port(self, port:str):
         '''
         Tries to initialize a serial connection.
         Baudrate is dafaulted for Telemetry Radio to 57600 baud/s.
         '''
         try:
-            return mavutil.mavlink_connection('COM3', baud=57600)
+            self.connection = mavutil.mavlink_connection(port, baud=57600)
+            self.serial_port = port
+            self.request_messages(frequency=10)
+            self.signals.connection_changed.emit(True)
+            return True
         except Exception as e:
+            QMessageBox.critical(
+                        None, "Serial port error",
+                        f"Serial port {port} could not be opened!",
+                        QMessageBox.Ok)
             self.signals.status_text.emit("No telemetry radio was found")
+            self.connection = None
+            self.serial_port = None
+            return False
             print(f"failed to establish drone connection: {e}")
 
     def __publish_heartbeat(self):
@@ -412,7 +418,8 @@ class DroneConnection(QThread):
         Emits heartbeat and checks for drones' heartbeat in background
         '''
         while not self.is_active():
-            self.connection = self.__establish()
+            if not self.init_serial_port(self.serial_port):
+                return
             self.signals.connection_changed.emit(False)
             self.msleep(1000)
         self.signals.connection_changed.emit(True)
@@ -451,7 +458,7 @@ class DroneControl():
         self.connection = drone_connection.connection
         self.signals = signals
         self.drone_worker = drone_connection
-        self.current_status = Mode.UNKNOWN
+        self.current_status = Mode.GROUND
         self.connect_signals_and_slots()
 
     def connect_signals_and_slots(self):
@@ -525,11 +532,16 @@ class DroneControl():
                 if takeoff_ack.result == 4:
                     QMessageBox.critical(
                         None, "Takeoff failed",
-                        """The takeoff has been rejected by the drone, please
+                        """The takeoff has been rejected by the drone, please\
                         check the prearm check list""",
                         QMessageBox.Ok)
 
     def land(self):
+        '''
+        Tries to land the drone at the exact position where it currently
+        flies.
+
+        '''
         if self.current_status != Mode.FLYING:
             QMessageBox.information(
                         None, "Landing not initiated",
@@ -547,7 +559,7 @@ class DroneControl():
             self.current_status = Mode.LANDING
 
 
-    def fly_forward(self, velocity):
+    def fly_forward(self, velocity:int=1):
         '''
         Fly the drone forward at a given speed (positive x direction)
         Speed is limitted between 0m/s and 8m/s
@@ -556,6 +568,7 @@ class DroneControl():
         ----------
         velocity : int
             velocity at which the drone should fly forward.
+            Defaults to 1 m/s.
         '''
         if velocity < 0 or velocity > 8:
             return
@@ -565,54 +578,90 @@ class DroneControl():
         self.drone_worker.ned_command(pos, vel, acc)
         time.sleep(0.33)
     
-    def fly_backwards(self):
+    def fly_backwards(self, velocity:int=1):
         '''
-        Fly the drone backwards at 1 m/s (negative x direction)
+        Fly the drone backwards at a given speed (negative x direction)
+        Speed is limitted between 0m/s and 8m/s
+        
+        Parameters
+        ----------
+        velocity : int
+            velocity at which the drone should fly backward.
+            Defaults to 1 m/s.
         '''
         pos = (0, 0, 0)
-        vel = (-1, 0, 0)
+        vel = (-velocity, 0, 0)
         acc = (0, 0, 0)
         self.drone_worker.ned_command(pos, vel, acc)
     
-    def fly_right(self):
+    def fly_right(self, velocity:int=1):
         '''
-        Fly the drone to the right at 1 m/s (positive y direction)
+        Fly the drone to the right at a given speed (positive y direction).
+        Speed is limitted between 0m/s and 8m/s
+        
+        Parameters
+        ----------
+        velocity : int
+            velocity at which the drone should fly to the right.
+            Defaults to 1 m/s.
         '''
         pos = (0, 0, 0)
-        vel = (0, 1, 0)
+        vel = (0, velocity, 0)
         acc = (0, 0, 0)
         self.drone_worker.ned_command(pos, vel, acc)
     
-    def fly_left(self):
+    def fly_left(self, velocity:int=1):
         '''
-        Fly the drone to the left at 1 m/s (negative y direction)
+        Fly the drone to the right at a given speed (negative y direction).
+        Speed is limitted between 0m/s and 8m/s
+        
+        Parameters
+        ----------
+        velocity : int
+            velocity at which the drone should fly to the left.
+            Defaults to 1 m/s.
         '''
         pos = (0, 0, 0)
-        vel = (0, -1, 0)
+        vel = (0, -velocity, 0)
         acc = (0, 0, 0)
         self.drone_worker.ned_command(pos, vel, acc)
     
-    def climb(self):
+    def climb(self, velocity:int=1):
         '''
-        Climb at 1 m/s (negative z direction)
+        Climb at velocity m/s (negative z direction)
+
+        Parameters
+        ----------
+        velocity : int
+            velocity at which the drone should climb.
+            Defaults to 1 m/s.
         '''
         pos = (0, 0, 0)
-        vel = (0, 0, -1) # careful!!!! -1 means 1m/s upwards!
+        vel = (0, 0, -velocity) # careful!!!! -velocity means velocity m/s upwards!
         acc = (0, 0, 0)
         self.drone_worker.ned_command(pos, vel, acc)
     
-    def sink(self):
+    def sink(self, velocity:int=1):
         '''
-        Sink at 1 m/s (positive z direction)
+        Sink at velocity m/s (positive z direction)
+
+        Parameters
+        ----------
+        velocity : int
+            velocity at which the drone should sink.
+            Defaults to 1 m/s.
         '''
         pos = (0, 0, 0)
-        vel = (0, 0, 1) # careful!!!! -1 means 1m/s upwards!
+        vel = (0, 0, velocity) # careful!!!! -1 means 1m/s upwards!
         acc = (0, 0, 0)
         self.drone_worker.ned_command(pos, vel, acc)
 
     def run_arming_checks(self):
         '''
         run pre arm checks on drone manually.
+        It is blocking!!!
+
+        Thus, please run it in an extra thread.
         '''
         if not self.drone_worker.is_active():
             return

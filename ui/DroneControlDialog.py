@@ -1,6 +1,7 @@
 from PyQt5.QtCore import Qt, pyqtSlot
-from PyQt5.QtWidgets import  QDialog, QWidget
+from PyQt5.QtWidgets import  QDialog, QWidget, QMessageBox
 from PyQt5.QtGui import QIcon, QKeyEvent
+from PyQt5.QtSerialPort import QSerialPortInfo
 
 import threading
 
@@ -17,6 +18,7 @@ class DroneControlDialog(QDialog):
         self.setupUi()
         self.drone_signals = DroneSignals()
         self.connect_signals_and_slots()
+        self.scan_serial_ports()
         self.drone_connection = DroneConnection(self.drone_signals)
         self.drone_control = DroneControl(self.drone_connection,
                                           self.drone_signals)
@@ -27,6 +29,15 @@ class DroneControlDialog(QDialog):
         self.ui.down_btn.setIcon(QIcon(icon_path + '/arrow_down.png'))
         self.ui.right_btn.setIcon(QIcon(icon_path + '/arrow_right.png'))
         self.ui.left_btn.setIcon(QIcon(icon_path + '/arrow_left.png'))
+    
+    def scan_serial_ports(self):
+        available_ports = QSerialPortInfo.availablePorts()
+        current_descr = None
+        for port in available_ports:
+            current_descr = port.description()
+            self.ui.com_combobox.addItem(port.portName())
+            if 'USB' in current_descr:
+                self.ui.com_combobox.setCurrentText(port.portName())
     
     def connect_signals_and_slots(self):
         self.finished.connect(self.on_dialog_closed)
@@ -81,6 +92,13 @@ class DroneControlDialog(QDialog):
     def clear_check_messages(self):
         self.ui.label_arm_checks.clear()
 
+    def get_port_from_name(self, name:str):
+        available_ports = QSerialPortInfo.availablePorts()
+        for port in available_ports:
+            if port.portName() == name:
+                return port
+        return None
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
         key = event.key()
         if key == Qt.Key_W:
@@ -98,6 +116,31 @@ class DroneControlDialog(QDialog):
         self.exec_()
 
     def connect(self):
+        selected_port_name = self.ui.com_combobox.currentText()
+        selected_port = self.get_port_from_name(selected_port_name)
+        print(selected_port.description())
+        if not selected_port:
+            return
+        if selected_port.isBusy():
+            QMessageBox.critical(
+                        None, "Serial port error",
+                        f"""Serial port {selected_port_name} is currently busy.\
+                        Thus, it cannot be opened (again)\
+                        Maybe a connection is still active?""",
+                        QMessageBox.Ok)
+            return
+        if not 'USB' in selected_port.description():
+            choice = QMessageBox.warning(
+                        None, "Serial port warning",
+                        f"""Serial port {selected_port_name} is not a USB\
+                        port! Click Retry to continue or Cancel to select\
+                        another port""",
+                        QMessageBox.Cancel | QMessageBox.Retry)
+            if choice == QMessageBox.Cancel:
+                return
+        if (not self.drone_connection.init_serial_port(
+            selected_port_name)):
+            return
         self.drone_connection.start()
         arm_check_thread = threading.Thread(name='armingChecks',
                          target=self.drone_control.run_arming_checks)
