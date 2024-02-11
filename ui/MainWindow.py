@@ -56,7 +56,7 @@ class MainWindow(QMainWindow):
         self.video_widget = VideoWidget(parent=self.ui.main_video)
         video_area = QVBoxLayout(self.ui.main_video)
         self.logo_label = QLabel(self.ui.main_video)
-        logo = QPixmap('C:/Users/jakob/Downloads/logo-4.png')
+        logo = QPixmap(FileHandler.get_icon_path() + '/logo.png')
         logo = logo.scaled(512, 512, Qt.KeepAspectRatio)
         self.logo_label.setPixmap(logo)
         self.logo_label.setAlignment(Qt.AlignCenter)
