@@ -508,11 +508,12 @@ class Video(QRunnable):
             possible_indices = []
         runup_coeffs = []
         jump_coeffs = []
-        for i in range(2, len(hip_height) - 2):
-            for j in range(i + 2, len(hip_height) - 4):
-                x_runup = np.arange(len(hip_height[:i]))
-                x_jump = np.arange(len(hip_height[i:j]))
-                x_landing = np.arange(len(hip_height[j:]))
+        n = len(hip_height)
+        for i in range(2, n - 4):
+            for j in range(i + 2, n - 2):
+                x_runup = np.arange(i) # hip_height[:i]
+                x_jump = np.arange(i, j) # hip_height[i:j]
+                x_landing = np.arange(j, n) # hip_height[j:]
                 hip_fit_runup, residuals_runup, _, _, _ = np.polyfit(
                     x_runup,hip_height[:i], 1, full=True)
                 hip_fit_jump, residuals_jump, _, _, _ = np.polyfit(
