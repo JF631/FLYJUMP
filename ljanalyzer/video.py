@@ -558,10 +558,13 @@ class Video(QRunnable):
         hip_landing = np.poly1d(land_coeffs)
         plt.xlabel("t [frames]")
         plt.ylabel("height [norm. pix]")
+        plt.scatter(changing_points[0], hip_height[changing_points[0]],
+                    label='takeoff', c='red')
         plt.plot(hip_height, label='hip')
         plt.plot(x_runup, hip_runup(x_runup), label="runup")
         plt.plot(x_jump, hip_jump(np.arange(len(x_jump))), label="jump")
-        plt.plot(x_landing, hip_landing(np.arange(len(x_landing))), label="landing")
+        plt.plot(x_landing, hip_landing(np.arange(len(x_landing))),
+                 label="landing")
         plt.legend()
         file_name ='test.png'
         plt.savefig(file_name)
