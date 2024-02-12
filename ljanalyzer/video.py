@@ -508,12 +508,13 @@ class Video(QRunnable):
             possible_indices = []
         runup_coeffs = []
         jump_coeffs = []
+        land_coeffs = []
         n = len(hip_height)
         for i in range(2, n - 4):
             for j in range(i + 2, n - 2):
                 x_runup = np.arange(i) # hip_height[:i]
-                x_jump = np.arange(i, j) # hip_height[i:j]
-                x_landing = np.arange(j, n) # hip_height[j:]
+                x_jump = np.arange(j - i) # hip_height[i:j]
+                x_landing = np.arange(n - j) # hip_height[j:]
                 hip_fit_runup, residuals_runup, _, _, _ = np.polyfit(
                     x_runup,hip_height[:i], 1, full=True)
                 hip_fit_jump, residuals_jump, _, _, _ = np.polyfit(
@@ -533,6 +534,7 @@ class Video(QRunnable):
                     changing_points = (i,j)
                     runup_coeffs = hip_fit_runup
                     jump_coeffs = hip_fit_jump
+                    land_coeffs = hip_fit_landing
         if full:
             possible_indices = np.array(possible_indices)
             possible_indices = np.where(np.logical_and(
@@ -550,13 +552,16 @@ class Video(QRunnable):
         hip_jump = np.poly1d(jump_coeffs)
         x_runup = np.arange(0, changing_points[0])
         x_jump = np.arange(changing_points[0], changing_points[1])
+        x_landing = np.arange(changing_points[1], n)
         hip_runup = np.poly1d(runup_coeffs)
         hip_jump = np.poly1d(jump_coeffs)
+        hip_landing = np.poly1d(land_coeffs)
         plt.xlabel("t [frames]")
         plt.ylabel("height [norm. pix]")
         plt.plot(hip_height, label='hip')
         plt.plot(x_runup, hip_runup(x_runup), label="runup")
         plt.plot(x_jump, hip_jump(np.arange(len(x_jump))), label="jump")
+        plt.plot(x_landing, hip_landing(np.arange(len(x_landing))), label="landing")
         plt.legend()
         file_name ='test.png'
         plt.savefig(file_name)
