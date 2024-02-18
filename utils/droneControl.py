@@ -396,7 +396,7 @@ class DroneConnection(QThread):
                 0,
                 self.connection.target_system,
                 self.connection.target_component,
-                9, #MAV_FRAME_LOCAL_NED
+                12, #MAV_FRAME_BODY_FRD
                 int(0b110111000111), #use velocity
                 x[0], x[1], x[2], # x, y, z (m)
                 dx[0], dx[1], dx[2], # vx, vy, vz (m/s)
@@ -474,6 +474,8 @@ class DroneControl():
         '''
         Arm the drone.
         '''
+        if not self.connection:
+            return
         self.connection.mav.command_long_send(
             self.connection.target_system,
             self.connection.target_component,
@@ -535,6 +537,7 @@ class DroneControl():
                         """The takeoff has been rejected by the drone, please\
                         check the prearm check list""",
                         QMessageBox.Ok)
+            self.current_status = Mode.FLYING
 
     def land(self):
         '''
@@ -572,6 +575,7 @@ class DroneControl():
         '''
         if velocity < 0 or velocity > 8:
             return
+        print("flying forward...")
         pos = (0, 0, 0)
         vel = (velocity, 0, 0)
         acc = (0, 0, 0)
@@ -593,6 +597,7 @@ class DroneControl():
         vel = (-velocity, 0, 0)
         acc = (0, 0, 0)
         self.drone_worker.ned_command(pos, vel, acc)
+        time.sleep(0.33)
     
     def fly_right(self, velocity:int=1):
         '''
@@ -609,6 +614,7 @@ class DroneControl():
         vel = (0, velocity, 0)
         acc = (0, 0, 0)
         self.drone_worker.ned_command(pos, vel, acc)
+        time.sleep(0.33)
     
     def fly_left(self, velocity:int=1):
         '''
@@ -625,6 +631,7 @@ class DroneControl():
         vel = (0, -velocity, 0)
         acc = (0, 0, 0)
         self.drone_worker.ned_command(pos, vel, acc)
+        time.sleep(0.33)
     
     def climb(self, velocity:int=1):
         '''
@@ -640,6 +647,7 @@ class DroneControl():
         vel = (0, 0, -velocity) # careful!!!! -velocity means velocity m/s upwards!
         acc = (0, 0, 0)
         self.drone_worker.ned_command(pos, vel, acc)
+        time.sleep(0.33)
     
     def sink(self, velocity:int=1):
         '''
@@ -655,6 +663,7 @@ class DroneControl():
         vel = (0, 0, velocity) # careful!!!! -1 means 1m/s upwards!
         acc = (0, 0, 0)
         self.drone_worker.ned_command(pos, vel, acc)
+        time.sleep(0.33)
 
     def run_arming_checks(self):
         '''
