@@ -374,7 +374,7 @@ class Video(QRunnable):
         lost_frames = (1 - (counter / self.__frame_count)) * 100
         param_file.close()
         tkf_frame = self.takeoff_frame(hip_height=hip_height,
-                                       full=False)
+                                       full=True)[0]
         if tkf_frame:
             print(f"takeoff detected at {tkf_frame}")
             param_file.add_metadata(('takeoff', tkf_frame))
@@ -510,6 +510,8 @@ class Video(QRunnable):
         jump_coeffs = []
         land_coeffs = []
         n = len(hip_height)
+        if full:
+            all_errors = np.empty((n, n), dtype='f4')
         for i in range(2, n - 4):
             for j in range(i + 2, n - 2):
                 x_runup = np.arange(i) # hip_height[:i]
@@ -524,7 +526,7 @@ class Video(QRunnable):
                 fitting_error = (residuals_runup + residuals_jump +
                                  residuals_landing)
                 if fitting_error and full:
-                    possible_indices.append(fitting_error[0])
+                    all_errors[i, j] = fitting_error
                 '''
                 since we already know the fitted jumping curve must be of form
                 -ax^2 + bx + c, we know a = hip_fit_jump[0] < 0.
@@ -536,18 +538,13 @@ class Video(QRunnable):
                     jump_coeffs = hip_fit_jump
                     land_coeffs = hip_fit_landing
         if full:
-            possible_indices = np.array(possible_indices)
-            possible_indices = np.where(np.logical_and(
-                (possible_indices < (total_error + total_error*0.01)), 
-                (possible_indices > (total_error - total_error*0.01))))[0]
-        '''
-        TODO verify the following if statement makes sense and is reasonable.
-        It is meant to solve the problem that a takeoff is detected during the
-        runup.
-        '''
-        # if(full and (changing_points < possible_indices[-1])):
-        #     index = possible_indices[-1]
-        # print(f"changing points detected at {changing_points}")
+            lower_bound = total_error - total_error * 0.1
+            upper_bound = total_error + total_error * 0.1
+            print('total error: {}'.format(total_error))
+            possible_indices = np.argwhere((all_errors >= lower_bound) &
+                                           (all_errors <= upper_bound))
+            print('shape: {}'.format(possible_indices.shape))
+            print('possible: {}'.format(possible_indices))
         hip_runup = np.poly1d(runup_coeffs)
         hip_jump = np.poly1d(jump_coeffs)
         x_runup = np.arange(0, changing_points[0])
