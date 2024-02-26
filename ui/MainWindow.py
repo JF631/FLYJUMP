@@ -21,6 +21,7 @@ from .VideoProgressWidget import VideoProgressBar, VideoProgessArea
 from .PlotWidget import MultiPlot, MatplotCanvas
 from .VideoWidget import VideoWidget
 from .DroneControlDialog import DroneControlDialog
+from ljanalyzer.eval import Filter
 from ljanalyzer.video import Video
 from utils.controlsignals import ControlSignals, SharedBool
 from utils.filehandler import FileHandler, ParameterFile
@@ -34,14 +35,10 @@ class MainWindow(QMainWindow):
         self.ui.setupUi(self)
         self.video_widget = None
         self.setupUi()
-        self.ui.action_choose_video_file.triggered.connect(
-            self.choose_video_dialog)
-        self.ui.action_load_analysis.triggered.connect(
-            self.choose_analysis_dialog)
-        self.ui.action_control_drone.triggered.connect(
-            self.show_drone_control)
+        self.connect_signals_and_slots()
         self.thread_pool = QThreadPool.globalInstance()
         self.current_video = None
+        self.__analysis_files = None
         FileHandler.create_general_structure()
         '''
         limit used cpu cores to half of available cores.
@@ -50,6 +47,25 @@ class MainWindow(QMainWindow):
         self.thread_pool.setMaxThreadCount(
             int(self.thread_pool.maxThreadCount() / 2)
         )
+
+    def connect_signals_and_slots(self):
+        self.ui.action_choose_video_file.triggered.connect(
+            self.choose_video_dialog)
+        self.ui.action_load_analysis.triggered.connect(
+            self.choose_analysis_dialog)
+        self.ui.action_control_drone.triggered.connect(
+            self.show_drone_control)
+        self.ui.start_analysis_btn.pressed.connect(self.start_analysis)
+
+    def hide_analysis_params(self):
+        self.ui.start_analysis_btn.hide()
+        self.ui.filtered_out_checkBox.hide()
+        self.ui.filter_combo.hide()
+    
+    def show_analysis_params(self):
+        self.ui.start_analysis_btn.show()
+        self.ui.filtered_out_checkBox.show()
+        self.ui.filter_combo.show()
 
     def setupUi(self):
         #main video widget
@@ -63,6 +79,7 @@ class MainWindow(QMainWindow):
         video_area.addWidget(self.logo_label)
         video_area.addWidget(self.video_widget)
         self.video_widget.hide()
+        self.hide_analysis_params()
         self.ui.main_video.setLayout(video_area)
         #matplot widgets
         self.result_area = QVBoxLayout(self.ui.result_area)
@@ -72,6 +89,9 @@ class MainWindow(QMainWindow):
         self.progressbar_area = VideoProgessArea(self.ui.result_area)
         self.result_area.addWidget(self.progressbar_area)
         self.ui.result_area.setLayout(self.result_area)
+        #combobox for filters
+        for filter in Filter:
+            self.ui.filter_combo.addItem(filter.name)
 
     def __add_matplot_ui(self):
         self.matplot_widget = MatplotCanvas(
@@ -91,7 +111,7 @@ class MainWindow(QMainWindow):
         control_dialog.setWindowFlag(Qt.WindowMaximizeButtonHint, True)
         control_dialog.exec_()
 
-    def __start_video_analaysis(self, file_names):
+    def __start_video_analaysis(self, file_names, filter:Filter=None):
         '''
         Starts one or multiple video analysis Threads.
         One thread per passed file name is created.
@@ -120,6 +140,7 @@ class MainWindow(QMainWindow):
                       "Angle":["right knee", "left knee"]}
         for file_name in file_names:
             video_task = Video(file_name, self.abort_flag)
+            video_task.set_filter(filter)
             progress_widget = VideoProgressBar(video_task.get_filename(),
                                                video_task.signals)
             if show_video:
@@ -217,7 +238,17 @@ class MainWindow(QMainWindow):
             'Video Files (*.mp4 *.avi *.mkv *.mov);;All Files (*)',
             options=dialog_options
         )
-        self.__start_video_analaysis(file_names)
+        self.show_analysis_params()
+        self.ui.video_loaded_label.setText(', '.join(file_names))
+        self.__analysis_files = file_names
+    
+    @pyqtSlot()
+    def start_analysis(self):
+        if not self.__analysis_files:
+            return
+        self.__start_video_analaysis(
+            self.__analysis_files, Filter[self.ui.filter_combo.currentText()])
+        
     
     @pyqtSlot(str)
     def analysation_finished(self, anlysis_path):

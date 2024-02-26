@@ -20,7 +20,7 @@ from utils.filehandler import ParameterFile, FileHandler
 from .framebuffer import FrameBuffer
 from .frame import Frame
 from .posedetector import PoseDetector
-from .eval import Input, EvalType
+from .eval import Input, EvalType, Filter
 
 class VideoSignals(QObject):
     '''
@@ -110,6 +110,7 @@ class Video(QRunnable):
                                           maxsize=2048, lock=True)
         self.__video_completed = threading.Event()
         self.abort = abort
+        self.__filter: Filter = None
         self.__playback = False
         self.__cap: cv2.VideoCapture = None
 
@@ -295,6 +296,9 @@ class Video(QRunnable):
                 break
         cap.release()
         print("released input")
+    
+    def set_filter(self, filter:Filter):
+        self.__filter = filter
 
     def __perform_pose_detection(self):
         '''
@@ -317,7 +321,7 @@ class Video(QRunnable):
         foot_pos2 = np.empty((2,2), dtype='f4')
         counter = 0
         analyzed_counter = 0
-        frame = Frame()
+        frame = Frame(self.__frame_buffer.pop())
         param_file = ParameterFile(self.get_analysis_path(), self.signals)
         while True:
             if self.abort.get():
@@ -330,6 +334,7 @@ class Video(QRunnable):
                 if frame is None:
                     print("Empty frame received")
                     break
+                frame.pre_process(self.__filter, inplace=True)
                 res = self.__detector.get_body_key_points(
                     frame.to_mediapipe_image(), counter)
                 if res.pose_landmarks:
@@ -338,7 +343,8 @@ class Video(QRunnable):
                     if counter == 0:
                         foot_pos = frame.foot_pos()
                         hip_pos = frame.hip_pos()
-                        if (np.any(foot_pos > 1.0) or np.any(foot_pos < 0.0) or
+                        if (np.any(foot_pos > 1.0) or np.any(foot_pos < 0.0)
+                            or
                             np.any(hip_pos > 1.0) or np.any(hip_pos < 0.0)):
                             continue
                     if (counter % velocity_frames) == 0:

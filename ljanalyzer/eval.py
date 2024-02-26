@@ -31,3 +31,12 @@ class Input(Enum):
     IMAGE = 0
     VIDEO = 1
     LIVESTREAM = 2
+
+class Filter(Enum):
+    '''
+    Defines the type of filter to use during pre-processing.
+    Supported filters are: LOWPASS, HIGHPASS, BILATERAL
+    '''
+    LOWPASS = 0
+    HIGHPASS = 1
+    BILATERAL = 2

@@ -12,6 +12,8 @@ from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
 import numpy as np
 
+from .eval import Filter
+
 class Frame():
     '''
     Abstraction of a opencv / numpy video frame of shape 
@@ -34,11 +36,11 @@ class Frame():
         self.__left_knee_angle = 0.0
         self.__hip_position = np.empty(2)
         self.__data = None
+        self.__pre_processed = None
         self.foot_positions: tuple = None
         self.dims = (0, 0, 0) # (height, width, channels)
         if frame is not None:
             self.update(frame)
-            self.dims = self.__data.shape
 
     def __bool__(self):
         return self.__data is not None
@@ -52,7 +54,8 @@ class Frame():
         frame : np.ndarray
             new frame of shape (height, width, channels)
         '''
-        self.__data = frame
+        self.__data = np.asarray(frame)
+        self.__pre_processed = np.empty_like(self.__data)
         self.dims = self.__data.shape
 
     def clear(self):
@@ -129,6 +132,26 @@ class Frame():
                 solutions.drawing_styles.get_default_pose_landmarks_style()
             )
 
+    def pre_process(self, filter:Filter=None, inplace=False):
+        if not filter:
+            return
+        sharpen_kernel = np.array([[
+                0, -1, 0,
+                -1, 5, -1,
+                0, -1, 0
+            ]], dtype='f4')
+        blur_kernel = 1/9 * np.array([[
+                1, 1, 1,
+                1, 1, 1,
+                1, 1, 1
+            ]], dtype='f4')
+        if filter == Filter.LOWPASS:
+            self.apply_filter(kernel=blur_kernel, inplace=inplace)
+        if filter == Filter.HIGHPASS:
+            self.apply_filter(kernel=sharpen_kernel, inplace=inplace)
+        if filter == Filter.BILATERAL:
+            self.bilateral_filter(output_result=inplace)
+
     def to_mediapipe_image(self) -> mp.Image:
         '''
         Converts numpy frame (BGR) to mediapipe image object (SRGB).
@@ -138,9 +161,19 @@ class Frame():
         -------
         frame : mp.Image
             current frame in Mediapipe SRGB Image format
+
+        INFO
+        ----
+        If no pre-processing has been applied, the original frame is returned.
+        Otherwise the pre-processed frame is returned.
         '''
+        if not len(self.__data):
+            return
+        rtrn = self.__pre_processed
+        if not self.__pre_processed.any():
+            rtrn = self.__data
         return mp.Image(image_format=mp.ImageFormat.SRGB,
-                                    data=self.__data)
+                                    data=rtrn)
 
     def to_rgb(self) -> np.ndarray:
         '''
@@ -153,6 +186,110 @@ class Frame():
             (height, width, channels)
         '''
         return cv2.cvtColor(self.__data, cv2.COLOR_BGR2RGB)
+    
+
+    def to_grayscale(self)-> np.ndarray:
+        ''''
+        returns a copy of the current frame in grayscale.
+        '''
+        return cv2.cvtColor(self.__data, cv2.COLOR_BGR2GRAY)
+    
+    def sharp_motion(self, prev_frame: np.ndarray):
+        '''
+        Tries to sharpen the motion in the current frame by sharpen the
+        difference between two consecutive frames.
+        '''
+        frame_diff = cv2.absdiff(self.__data, prev_frame)
+        motion_mask = cv2.cvtColor(frame_diff, cv2.COLOR_BGR2GRAY)
+        _, motion_mask = cv2.threshold(motion_mask, 120, 255,
+                                       cv2.THRESH_BINARY)
+        sharpened_motion = cv2.filter2D(self.__data, -1, 
+                                        np.array([
+                                            [-1, -1, -1],
+                                            [-1,  9, -1],
+                                            [-1, -1, -1]
+                                        ]))
+        sharpened_frame = cv2.bitwise_and(self.__data, self.__data,
+                                          mask=motion_mask)
+        sharpened_frame += cv2.bitwise_and(sharpened_motion, sharpened_motion,
+                                           mask=~motion_mask)
+        self.__pre_processed = sharpened_frame
+    
+    def bilateral_filter(self, output_result=False):
+        '''
+        Applies a bilateral smoothing filter to the currentframe.
+        One spacial gaussian (distance between pixels) and one range
+        gaussian (intensity similarity) is used.
+
+        The output is by default saved in an internal buffer.
+
+        Parameters
+        ----------
+        output_result : bool
+            if False (default), the filtered output will just be used
+            internally.
+            if True, the filtered output will also be saved as current frame.
+        '''
+        cv2.bilateralFilter(src=self.__data, d=15, sigmaColor=75,
+                            sigmaSpace=75, dst=self.__pre_processed)
+        if output_result:
+            self.__data = np.copy(self.__pre_processed)
+            self.__pre_processed = np.empty_like(self.__data)
+    
+    def apply_filter(self, kernel=[], inplace=False):
+        '''
+        applies a 2D filter via convolution to the current frame.
+
+        Parameters
+        ----------
+        kernel : array-like
+            2D filter kernel used for convolution
+        inplace : bool
+            if True, the convolution is perfomed directly on the current frame.
+            if False, a copy is created on which the convolution is performed.
+        
+        Returns
+        -------
+        frame : np.ndarray
+            filtered frame. ONLY IF inplace is false.
+        '''
+        if len(kernel) > 0:
+            kernel = np.array(kernel)
+            if len(kernel.shape) != 2:
+                print('kernel of 2D shape expected, got {}D shape'.format(len(kernel.shape)))
+        else:
+            kernel = np.array([[
+                0, 0, 0,
+                0, 1, 0,
+                0, 0, 0
+            ]], dtype='f4')
+        if inplace:
+            cv2.filter2D(src=self.__data, ddepth=-1, kernel=kernel,
+                         dst=self.__data)
+        else:
+            cv2.filter2D(src=self.__data, ddepth=-1,
+                            kernel=kernel, dst=self.__pre_processed)
+
+    def stabilize(self, prev_frame: np.ndarray):
+        '''
+        Tries to stabilze the current frame by two conecutive frames.
+
+        CAUTION
+        --------
+        This function is very costly.
+        Thus, if used as pre-processing stage, it drastically influence the
+        overall performance.
+        '''
+        current_grayscale = self.to_grayscale()
+        flow = cv2.calcOpticalFlowFarneback(prev_frame, current_grayscale, None, 
+                                            0.5, 3, 15, 3, 5, 1.2, 0)
+        dx = flow[:,:,0].mean()
+        dy = flow[:,:,1].mean()
+        translation_matrix = np.float32([[1, 0, -dx], [0, 1, -dy]])
+        cv2.warpAffine(
+            self.__data, translation_matrix,
+            (self.__data.shape[1], self.__data.shape[0]),
+            dst=self.__pre_processed)
 
     def data(self) -> np.ndarray:
         '''
