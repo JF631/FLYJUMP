@@ -105,7 +105,7 @@ class Video(QRunnable):
         self.__open(path)
         self.__path = path
         self.__output_path = path
-        self.__detector = PoseDetector(Input.VIDEO, EvalType.FULL)
+        self.__detector = PoseDetector(Input.VIDEO, EvalType.REALTIME)
         self.__frame_buffer = FrameBuffer(self.__frame_count, self.dims,
                                           maxsize=2048, lock=True)
         self.__video_completed = threading.Event()

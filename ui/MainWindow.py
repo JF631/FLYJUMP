@@ -145,6 +145,7 @@ class MainWindow(QMainWindow):
                                                video_task.signals)
             if show_video:
                 video_task.signals.finished.connect(self.analysation_finished)
+                video_task.signals.error.connect(self.handle_error)
                 multi_plot = MultiPlot(signals=video_task.signals,
                                        num_plots=2, curves=plot_descr,
                                        parent=self.ui.result_area)
@@ -210,6 +211,16 @@ class MainWindow(QMainWindow):
         self.current_video.set_control_signals(self.control_signals)
         self.video_widget.connect_signals(self.current_video.signals)
         self.current_video.play(first_frame)
+    
+    @pyqtSlot(str)
+    def handle_error(self, error: str):
+        print(error)
+        message = QMessageBox.critical(
+                None, "Error", """The file {} already exists. Do you want to
+                override it?""".format(error),
+                QMessageBox.Yes | QMessageBox.Cancel)
+        if message == QMessageBox.Cancel:
+            return None
 
     @pyqtSlot()
     def choose_analysis_dialog(self):

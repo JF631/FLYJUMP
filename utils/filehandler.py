@@ -20,6 +20,7 @@ class ParameterFile():
     It is saved on disk as hdf5 file.
     '''
     def __init__(self, file_path:str, signals = None) -> None:
+        # self.check_and_delete(file_path)
         self.__frame_data = {}
         self.__frame_count = 0
         self.__batchsize = 128
@@ -31,6 +32,10 @@ class ParameterFile():
         self._right_knee_angle = []
         if signals:
             signals.error.connect(self.close)
+
+    def check_and_delete(self, file_path):
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
     def __add_to_dict(self, frame: Frame):
         '''
