@@ -133,6 +133,18 @@ class Frame():
             )
 
     def pre_process(self, filter:Filter=None, inplace=False):
+        '''
+        applies convolutional filter to the current frame.
+        
+        Parameters
+        ----------
+        filter : Filter
+            Highpass, Lowpass or BILATERAL
+        inplace : bool
+            if True, all filters are applied directly on the current frames'
+            data.
+            Otherwise, a copy is created and filtered. 
+        '''
         if not filter:
             return
         sharpen_kernel = np.array([[

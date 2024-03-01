@@ -89,7 +89,6 @@ class PoseDetector:
 
     def __init_pose_detector(self)->None:
         current_path = os.path.dirname(__file__)
-        print(current_path)
         if self.eval_type == EvalType.REALTIME:
             model_path = '../models/pose_landmarker_lite.task'
         if self.eval_type == EvalType.NEAR_REALTIME:
