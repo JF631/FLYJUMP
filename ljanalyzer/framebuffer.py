@@ -10,10 +10,12 @@ Date: 2023-10-20
 
 import threading
 import warnings
-import psutil
-import numpy as np
 
-from utils.warnings import WarningDialog, PotentialRaceConditionWarning
+import numpy as np
+import psutil
+
+from utils.warnings import PotentialRaceConditionWarning, WarningDialog
+
 
 class FrameBuffer():
     '''

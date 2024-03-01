@@ -1,21 +1,25 @@
-'''
+"""
 Module that provides several custom warnings.
 
 Author: Jakob Faust (software_jaf@mx442.de)
 Date: 2023-10-124
-'''
-from PyQt5.QtWidgets import QDialog, QLabel, QVBoxLayout, QDialogButtonBox
+"""
+
 from PyQt5.QtCore import pyqtSlot
+from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout
+
 
 class PotentialRaceConditionWarning(ResourceWarning):
-    '''
-    warning is shown if the software detects a risk of a possible race 
+    """
+    warning is shown if the software detects a risk of a possible race
     condition
-    '''
+    """
+
     pass
 
+
 class WarningDialog(QDialog):
-    def __init__(self, signals = None) -> None:
+    def __init__(self, signals=None) -> None:
         super().__init__()
         self.setWindowTitle("Warning")
         QBtn = QDialogButtonBox.StandardButton.Ok
@@ -37,7 +41,7 @@ class WarningDialog(QDialog):
         warning_text = f"""Warning: {message}"""
         self.label.setText(warning_text)
         self.exec()
-    
+
     @pyqtSlot(str)
     def warning_dialog(self, message):
         # self.moveToThread(QApplication.instance().thread())

@@ -1,19 +1,21 @@
-from PyQt5.QtGui import QPixmap, QImage
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QSizePolicy
-from PyQt5.QtCore import pyqtSlot, QCoreApplication, Qt
+from PyQt5.QtCore import QCoreApplication, Qt, pyqtSlot
+from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from ljanalyzer.frame import Frame
 from ljanalyzer.video import VideoSignals
 
+
 class VideoWidget(QWidget):
-    def __init__(self, video_signals: VideoSignals = None, parent: QWidget | None = ...) -> None:
+    def __init__(
+        self, video_signals: VideoSignals = None, parent: QWidget | None = ...
+    ) -> None:
         super().__init__(parent)
         self.video_label = QLabel(parent)
         self.video_label.show()
-        self.video_label.setSizePolicy(QSizePolicy.Expanding,
-                                       QSizePolicy.Expanding)
+        self.video_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.video_label.setScaledContents(False)
-        layout  = QVBoxLayout()
+        layout = QVBoxLayout()
         layout.addWidget(self.video_label)
         self.current_pixmap = None
         self.current_frame = None
@@ -37,11 +39,19 @@ class VideoWidget(QWidget):
     def set_image(self):
         height, width, channels = self.current_frame.dims
         bytes_per_line = channels * width
-        q_image = QImage(self.current_frame.to_rgb(), width, height,
-                         bytes_per_line, QImage.Format_RGB888)
+        q_image = QImage(
+            self.current_frame.to_rgb(),
+            width,
+            height,
+            bytes_per_line,
+            QImage.Format_RGB888,
+        )
         self.current_pixmap = QPixmap.fromImage(q_image)
-        self.video_label.setPixmap(self.current_pixmap.scaled(
-            self.video_label.size(),aspectRatioMode=Qt.KeepAspectRatio))
+        self.video_label.setPixmap(
+            self.current_pixmap.scaled(
+                self.video_label.size(), aspectRatioMode=Qt.KeepAspectRatio
+            )
+        )
 
     def update_label_size(self):
         size = self.size()
