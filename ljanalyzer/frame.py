@@ -236,7 +236,7 @@ class Frame:
         """
         cv2.bilateralFilter(
             src=self.__data,
-            d=15,
+            d=5,
             sigmaColor=75,
             sigmaSpace=75,
             dst=self.__pre_processed,
