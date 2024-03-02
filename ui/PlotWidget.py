@@ -2,6 +2,7 @@ import matplotlib
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSlot
 from qwt import QwtPlot, QwtPlotCurve, QwtLegend
+from PyQt5.QtWidgets import QVBoxLayout, QWidget
 import numpy as np
 import matplotlib
 
