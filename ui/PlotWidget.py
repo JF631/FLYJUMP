@@ -1,5 +1,5 @@
-from PyQt5.QtGui import QPen
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox
+import matplotlib
+import numpy as np
 from PyQt5.QtCore import Qt, pyqtSlot
 from qwt import QwtPlot, QwtPlotCurve, QwtLegend
 import numpy as np

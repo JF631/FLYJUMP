@@ -1,35 +1,36 @@
-from PyQt5.QtCore import QObject, Qt, QThread, pyqtSlot, pyqtSignal
-from PyQt5.QtWidgets import  QDialog, QWidget, QMessageBox, QVBoxLayout
+import threading
+
+import cv2
+from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QIcon, QKeyEvent
 from PyQt5.QtSerialPort import QSerialPortInfo
-import cv2
-import numpy as np
+from PyQt5.QtWidgets import QDialog, QMessageBox, QVBoxLayout, QWidget
 
-import threading
-import time
+from ljanalyzer.frame import Frame
+from ljanalyzer.video import VideoSignals
+from utils.controlsignals import DroneSignals
+from utils.droneControl import DroneConnection, DroneControl
+from utils.filehandler import FileHandler
 
 from .Ui_DroneControlDialog import Ui_Dialog
 from .VideoWidget import VideoWidget
-from utils.droneControl import DroneControl, DroneConnection
-from utils.controlsignals import DroneSignals
-from ljanalyzer.video import VideoSignals
-from ljanalyzer.frame import Frame
-from utils.filehandler import FileHandler
+
 
 class LiveStreamHandler(QThread):
     finished = pyqtSignal()
 
-    def __init__(self, parent: QObject | None = ...,
-                 signals: VideoSignals = None) -> None:
+    def __init__(
+        self, parent: QObject | None = ..., signals: VideoSignals = None
+    ) -> None:
         self.signals = signals
         self.cap = None
         super(LiveStreamHandler, self).__init__(parent)
 
     def __receive_stream(self):
         print("receiving...")
-        ip_address = '10.42.0.1'
+        ip_address = "10.42.0.1"
         port = 8080
-        video_url = f'tcp://{ip_address}:{port}'
+        video_url = f"tcp://{ip_address}:{port}"
         self.cap = cv2.VideoCapture(video_url)
         if not self.cap.isOpened():
             print("Error: Unable to open video stream")
@@ -44,18 +45,19 @@ class LiveStreamHandler(QThread):
                 frame = Frame(frame)
                 self.signals.update_frame.emit(frame)
             except Exception as e:
-                print('error while reading video stream: {}'.format(e))
+                print("error while reading video stream: {}".format(e))
         self.cap.release()
-    
+
     def terminate(self) -> None:
         print("trying to clean up")
         if self.cap:
             self.cap.release()
         return super().terminate()
-    
+
     def run(self) -> None:
         self.__receive_stream()
         self.finished.emit()
+
 
 class DroneControlDialog(QDialog):
     def __init__(self, parent: QWidget | None = ...) -> None:
@@ -64,26 +66,25 @@ class DroneControlDialog(QDialog):
         self.ui.setupUi(self)
         self.drone_signals = DroneSignals()
         self.video_signals = VideoSignals()
-        self.live_stream_handler = LiveStreamHandler(self,
-            signals=self.video_signals)
+        self.live_stream_handler = LiveStreamHandler(self, signals=self.video_signals)
         self.setupUi()
         self.connect_signals_and_slots()
         self.scan_serial_ports()
         self.drone_connection = DroneConnection(self.drone_signals)
-        self.drone_control = DroneControl(self.drone_connection,
-                                          self.drone_signals)
-        
+        self.drone_control = DroneControl(self.drone_connection, self.drone_signals)
+
     def setupUi(self):
-        self.video_widget = VideoWidget(self.video_signals,
-                                        parent=self.ui.live_stream_widget)
+        self.video_widget = VideoWidget(
+            self.video_signals, parent=self.ui.live_stream_widget
+        )
         video_area = QVBoxLayout(self.ui.live_stream_widget)
         video_area.addWidget(self.video_widget)
         self.ui.live_stream_widget.setLayout(video_area)
         icon_path = FileHandler.get_icon_path()
-        self.ui.up_btn.setIcon(QIcon(icon_path + '/arrow_up.png'))
-        self.ui.down_btn.setIcon(QIcon(icon_path + '/arrow_down.png'))
-        self.ui.right_btn.setIcon(QIcon(icon_path + '/arrow_right.png'))
-        self.ui.left_btn.setIcon(QIcon(icon_path + '/arrow_left.png'))
+        self.ui.up_btn.setIcon(QIcon(icon_path + "/arrow_up.png"))
+        self.ui.down_btn.setIcon(QIcon(icon_path + "/arrow_down.png"))
+        self.ui.right_btn.setIcon(QIcon(icon_path + "/arrow_right.png"))
+        self.ui.left_btn.setIcon(QIcon(icon_path + "/arrow_left.png"))
 
     def scan_serial_ports(self):
         available_ports = QSerialPortInfo.availablePorts()
@@ -91,9 +92,9 @@ class DroneControlDialog(QDialog):
         for port in available_ports:
             current_descr = port.description()
             self.ui.com_combobox.addItem(port.portName())
-            if 'USB' in current_descr:
+            if "USB" in current_descr:
                 self.ui.com_combobox.setCurrentText(port.portName())
-    
+
     def connect_signals_and_slots(self):
         self.finished.connect(self.on_dialog_closed)
         self.ui.clear_msg_button.clicked.connect(self.clear_check_messages)
@@ -106,10 +107,8 @@ class DroneControlDialog(QDialog):
         self.ui.up_btn.clicked.connect(self.fly_forward)
         self.ui.down_btn.clicked.connect(self.fly_backwards)
         self.drone_signals.status_text.connect(self.update_error_label)
-        self.drone_signals.vehicle_battery_status.connect(
-            self.update_battery_info)
-        self.drone_signals.connection_changed.connect(
-            self.change_connection_status)
+        self.drone_signals.vehicle_battery_status.connect(self.update_battery_info)
+        self.drone_signals.connection_changed.connect(self.change_connection_status)
         self.drone_signals.vehicle_gps_status.connect(self.update_params)
 
     @pyqtSlot(str)
@@ -120,10 +119,10 @@ class DroneControlDialog(QDialog):
 
     @pyqtSlot(dict)
     def update_params(self, vehicle_status):
-        alt = vehicle_status.get('relative_alt') #in m
-        gnd_speed = vehicle_status.get('velocity') # in m/s
-        sat_count = vehicle_status.get('satelites')
-        fix_type = vehicle_status.get('fix_type')
+        alt = vehicle_status.get("relative_alt")  # in m
+        gnd_speed = vehicle_status.get("velocity")  # in m/s
+        sat_count = vehicle_status.get("satelites")
+        fix_type = vehicle_status.get("fix_type")
         self.ui.label_height.setText(str(alt))
         self.ui.label_velocity.setText(str(gnd_speed))
         self.ui.label_satelites.setText(str(sat_count))
@@ -131,23 +130,23 @@ class DroneControlDialog(QDialog):
 
     @pyqtSlot(dict)
     def update_battery_info(self, battery_status):
-        voltage = battery_status.get('voltages')[0] / 1e3
-        consumed_current = battery_status.get('current_consumed')
+        voltage = battery_status.get("voltages")[0] / 1e3
+        consumed_current = battery_status.get("current_consumed")
         self.ui.label_voltage.setText(str(voltage))
         self.ui.label_consumed_current.setText(str(consumed_current))
 
     @pyqtSlot(bool)
     def change_connection_status(self, connetcted: bool):
-        btn_text = 'Connection Lost'
+        btn_text = "Connection Lost"
         if connetcted:
-            btn_text = 'Connected'
+            btn_text = "Connected"
         self.ui.connect_button.setText(btn_text)
 
     @pyqtSlot()
     def clear_check_messages(self):
         self.ui.label_arm_checks.clear()
 
-    def get_port_from_name(self, name:str):
+    def get_port_from_name(self, name: str):
         available_ports = QSerialPortInfo.availablePorts()
         for port in available_ports:
             if port.portName() == name:
@@ -166,10 +165,10 @@ class DroneControlDialog(QDialog):
             self.fly_right()
         elif key == Qt.Key_I:
             self.climb()
-            print('climb')
+            print("climb")
         elif key == Qt.Key_K:
             self.descent()
-            print('descent')
+            print("descent")
         else:
             super().keyPressEvent(event)
 
@@ -184,63 +183,67 @@ class DroneControlDialog(QDialog):
             return
         if selected_port.isBusy():
             QMessageBox.critical(
-                        None, "Serial port error",
-                        f"""Serial port {selected_port_name} is currently busy.\
+                None,
+                "Serial port error",
+                f"""Serial port {selected_port_name} is currently busy.\
                         Thus, it cannot be opened (again)\
                         Maybe a connection is still active?""",
-                        QMessageBox.Ok)
+                QMessageBox.Ok,
+            )
             return
-        if not 'USB' in selected_port.description():
+        if not "USB" in selected_port.description():
             choice = QMessageBox.warning(
-                        None, "Serial port warning",
-                        f"""Serial port {selected_port_name} is not a USB\
+                None,
+                "Serial port warning",
+                f"""Serial port {selected_port_name} is not a USB\
                         port! Click Retry to continue or Cancel to select\
                         another port""",
-                        QMessageBox.Cancel | QMessageBox.Retry)
+                QMessageBox.Cancel | QMessageBox.Retry,
+            )
             if choice == QMessageBox.Cancel:
                 return
-        if (not self.drone_connection.init_serial_port(
-            selected_port_name)):
+        if not self.drone_connection.init_serial_port(selected_port_name):
             return
         self.drone_connection.start()
-        arm_check_thread = threading.Thread(name='armingChecks',
-                         target=self.drone_control.run_arming_checks)
+        arm_check_thread = threading.Thread(
+            name="armingChecks", target=self.drone_control.run_arming_checks
+        )
         arm_check_thread.start()
 
     def perform_takeoff(self):
         self.drone_control.arm()
         self.drone_control.takeoff(height=9)
-    
+
     def disarm_drone(self):
         self.drone_control.run_arming_checks()
-    
+
     def arm_drone(self):
         self.drone_control.arm()
-    
+
     def climb(self):
         self.drone_control.climb(velocity=0.5)
-    
+
     def descent(self):
         self.drone_control.sink(velocity=0.5)
 
     def init_home_return(self):
         self.drone_control.return_home()
-    
+
     def perform_landing(self):
         self.drone_control.land()
-    
+
     def fly_forward(self):
         self.drone_control.fly_forward(velocity=0.5)
-    
+
     def fly_backwards(self):
         self.drone_control.fly_backwards(velocity=0.5)
-    
+
     def fly_right(self):
         self.drone_control.fly_right(velocity=0.5)
-    
+
     def fly_left(self):
         self.drone_control.fly_left(velocity=0.5)
-    
+
     def on_dialog_closed(self):
         self.drone_connection.terminate()
         self.live_stream_handler.terminate()
