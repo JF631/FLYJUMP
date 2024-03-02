@@ -244,7 +244,7 @@ class ParameterFile:
 
         Returns
         -------
-        hip_height : np.ndarray
+        right_foot_height : np.ndarray
             hip height over time as flat numpy array
             shape (num_frames,)
         """
@@ -256,11 +256,24 @@ class ParameterFile:
 
         Returns
         -------
-        hip_height : np.ndarray
+        left_foot_height : np.ndarray
             hip height over time as flat numpy array
             shape (num_frames,)
         """
         return self._left_foot_pos
+
+    def get_knee_angles(self):
+        """
+        Absolute knee angles over time.
+
+        Returns
+        -------
+        knee_angles : np.ndarray
+            knee angles over time as 2D numpy array
+            shape (num_frames, 2)
+        """
+        return np.column_stack((self._right_knee_angle,
+                                self._left_knee_angle))
 
     def get_left_knee_angle(self):
         """
@@ -268,7 +281,7 @@ class ParameterFile:
 
         Returns
         -------
-        hip_height : np.ndarray
+        left_knee_angle : np.ndarray
             left knee angle over time as flat numpy array
             shape (num_frames,)
         """
@@ -280,7 +293,7 @@ class ParameterFile:
 
         Returns
         -------
-        hip_height : np.ndarray
+        right_knee_angle : np.ndarray
             right knee angle over time as flat numpy array
             shape (num_frames,)
         """
