@@ -110,7 +110,7 @@ class Video(QRunnable):
         self.__open(path)
         self.__path = path
         self.__output_path = path
-        self.__detector = PoseDetector(Input.VIDEO, EvalType.REALTIME)
+        self.__detector = PoseDetector(Input.VIDEO, EvalType.FULL)
         self.__frame_buffer = FrameBuffer(
             self.__frame_count, self.dims, maxsize=2048, lock=True
         )
@@ -321,6 +321,7 @@ class Video(QRunnable):
         )
         playback = False
         hip_height = []
+        knee_angles = []
         lost_frames = 0
         velocity_frames = 2
         foot_pos = np.empty((2, 2), dtype="f4")
@@ -382,6 +383,7 @@ class Video(QRunnable):
                         2,
                     )
                     hip_height.append(1 - frame.hip_pos()[1])
+                    knee_angles.append(frame.knee_angles())
                     frame_params = np.hstack(
                         (
                             1 - foot_pos[1],  # foot height
@@ -405,7 +407,8 @@ class Video(QRunnable):
         frame.clear()
         lost_frames = (1 - (counter / self.__frame_count)) * 100
         param_file.close()
-        tkf_frame = self.takeoff_frame(hip_height=hip_height, full=True)[0]
+        tkf_frame = self.takeoff_frame(hip_height=hip_height,
+                                       knee_angles=knee_angles, full=True)[0]
         if tkf_frame:
             print(f"takeoff detected at {tkf_frame}")
             param_file.add_metadata(("takeoff", tkf_frame))
@@ -496,7 +499,8 @@ class Video(QRunnable):
         """
         return self.__output_path
 
-    def takeoff_frame(self, hip_height: np.ndarray = None, full=False):
+    def takeoff_frame(self, hip_height: np.ndarray = None,
+                      knee_angles: np.ndarray = None, full: bool = False):
         """
         detects the frame that shows the takeoff image.
         It uses the hip position, actually the hip height, to detect the takeoff.
@@ -534,6 +538,10 @@ class Video(QRunnable):
         if hip_height is None:
             param_file.load()
             hip_height = param_file.get_hip_height()
+        if knee_angles is None:
+            param_file.load()
+            knee_angles = param_file.get_knee_angles()
+        print(knee_angles)
         total_error = 100
         changing_points = (0, 0)
         if full:
@@ -564,8 +572,11 @@ class Video(QRunnable):
                 """
                 since we already know the fitted jumping curve must be of form
                 -ax^2 + bx + c, we know a = hip_fit_jump[0] < 0.
+                And, as the jumping leg is fully extended during takeoff, the
+                matching knee angle must be above 170 degrees
                 """
-                if fitting_error < total_error and hip_fit_jump[0] < 0:
+                if (fitting_error < total_error and hip_fit_jump[0] < 0
+                    and np.any(knee_angles[i] >= 170.0)):
                     total_error = fitting_error
                     changing_points = (i, j)
                     runup_coeffs = hip_fit_runup
