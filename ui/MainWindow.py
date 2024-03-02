@@ -102,8 +102,8 @@ class MainWindow(QMainWindow):
             self.ui.result_area,
             x_label='t[frames]', y_label='angle[degree]',
             control_signals=self.control_signals)
-        self.result_area.addWidget(self.matplot_widget, stretch=1)
-        self.result_area.addWidget(self.matplot_angle, stretch=1)
+        self.result_area.addWidget(self.matplot_widget, stretch=3)
+        self.result_area.addWidget(self.matplot_angle, stretch=3)
 
     def show_drone_control(self):
         control_dialog = DroneControlDialog(self)
@@ -130,6 +130,10 @@ class MainWindow(QMainWindow):
             self.logo_label = None
         self.video_widget.show()
         self.progressbar_area.clear()
+        if self.matplot_widget:
+            self.matplot_widget.hide()
+        if self.matplot_angle:
+            self.matplot_angle.hide()
         if self.current_video:
             self.current_video.stop()
             self.current_video = None
@@ -191,6 +195,8 @@ class MainWindow(QMainWindow):
             self.current_video = None
         self.matplot_widget.clear()
         self.matplot_angle.clear()
+        self.matplot_angle.show()
+        self.matplot_widget.show()
         self.progressbar_area.clear()
         self.matplot_widget.plot2D(param_file.get_left_foot_height(),
                                    label='left foot')
