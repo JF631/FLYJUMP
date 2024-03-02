@@ -147,6 +147,7 @@ class Frame():
         '''
         if not filter:
             return
+        self.__data = cv2.convertScaleAbs(src=self.__data, alpha=1.2, beta=4.0)
         sharpen_kernel = np.array([[
                 0, -1, 0,
                 -1, 5, -1,
@@ -257,13 +258,8 @@ class Frame():
         kernel : array-like
             2D filter kernel used for convolution
         inplace : bool
-            if True, the convolution is perfomed directly on the current frame.
+            if True, the convolution is performed directly on the current frame.
             if False, a copy is created on which the convolution is performed.
-        
-        Returns
-        -------
-        frame : np.ndarray
-            filtered frame. ONLY IF inplace is false.
         '''
         if len(kernel) > 0:
             kernel = np.array(kernel)
