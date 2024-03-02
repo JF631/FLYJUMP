@@ -1,6 +1,8 @@
-from PyQt5.QtWidgets import QWidget, QLabel, QProgressBar, QVBoxLayout
 from PyQt5.QtCore import Qt, pyqtSlot
+from PyQt5.QtWidgets import QLabel, QProgressBar, QVBoxLayout, QWidget
+
 from ljanalyzer.video import VideoSignals
+
 
 class VideoProgessArea(QWidget):
     def __init__(self, parent: QWidget | None = ...) -> None:
@@ -15,7 +17,7 @@ class VideoProgessArea(QWidget):
 
     def add_widget(self, widget: QWidget):
         self.layout().addWidget(widget)
-    
+
     def clear(self):
         while self.layout().count():
             curr_item = self.layout().takeAt(0)
@@ -23,6 +25,7 @@ class VideoProgessArea(QWidget):
             if curr_widget:
                 curr_widget.setParent(None)
                 curr_widget.deleteLater()
+
 
 class VideoProgressBar(QWidget):
     def __init__(self, identifier: str, signals: VideoSignals) -> None:
