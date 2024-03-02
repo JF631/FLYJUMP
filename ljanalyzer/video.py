@@ -338,7 +338,7 @@ class Video(QRunnable):
                 res = self.__detector.get_body_key_points(
                     frame.to_mediapipe_image(), counter)
                 if res.pose_landmarks:
-                    frame.annotate(res.pose_landmarks, as_overlay=False)
+                    frame.annotate(res.pose_landmarks, as_overlay=True)
                     param_file.save(frame)
                     if counter == 0:
                         foot_pos = frame.foot_pos()
