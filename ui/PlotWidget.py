@@ -1,10 +1,8 @@
 import matplotlib
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSlot
-from qwt import QwtPlot, QwtPlotCurve, QwtLegend
 from PyQt5.QtWidgets import QVBoxLayout, QWidget
-import numpy as np
-import matplotlib
+from qwt import QwtLegend, QwtPlot, QwtPlotCurve
 
 matplotlib.use("Qt5Agg")
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
@@ -214,6 +212,8 @@ class MatplotCanvas(FigureCanvasQTAgg):
             Current frame that should be indicated.
         """
         if self.y_values is None:
+            return
+        if frame > len(self.y_values) - 1:
             return
         x_value = frame
         y_value = self.y_values[x_value]
