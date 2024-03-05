@@ -1,4 +1,5 @@
 import threading
+import socket
 
 import cv2
 from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal, pyqtSlot
@@ -8,7 +9,7 @@ from PyQt5.QtWidgets import QDialog, QMessageBox, QVBoxLayout, QWidget
 
 from ljanalyzer.frame import Frame
 from ljanalyzer.video import VideoSignals
-from utils.controlsignals import DroneSignals
+from utils.controlsignals import DroneSignals, SharedBool
 from utils.droneControl import DroneConnection, DroneControl
 from utils.filehandler import FileHandler
 
@@ -24,18 +25,59 @@ class LiveStreamHandler(QThread):
     ) -> None:
         self.signals = signals
         self.cap = None
+        self.ctrl_socket: socket.socket = None
+        self.analysis_running = SharedBool()
         super(LiveStreamHandler, self).__init__(parent)
+
+    def init_connection(self):
+        self.ctrl_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.ctrl_socket.connect(('10.42.0.1', 8080))
+
+    def _start_stream(self):
+        if not self.ctrl_socket:
+            return
+        self.ctrl_socket.sendall('stream'.encode())
+        self.__receive_stream()
+
+    def record_video(self):
+        if not self.ctrl_socket:
+            return
+        self.ctrl_socket.sendall('start_recording'.encode())
+        self.analysis_running.set()
+
+    def receive_data(self):
+        if not self.ctrl_socket:
+            return
+        file_size = self.ctrl_socket.recv(4)
+        file_size = int.from_bytes(file_size, byteorder='big')
+        received = b''
+        while len(received) < file_size:
+            chunk = self.ctrl_socket.recv(1024)
+            received += chunk
+        with open('test123.mp4', 'wb') as infile:
+            infile.write(received)
+        print('everything received')
+
+
+    def stop_recording(self):
+        if not self.ctrl_socket:
+            return
+        self.ctrl_socket.sendall('stop_recording'.encode())
+        self.analysis_running.reset()
+        self.receive_data()
+        # recv = threading.Thread(target=self.receive_data)
+        # recv.start()
 
     def __receive_stream(self):
         print("receiving...")
         ip_address = "10.42.0.1"
-        port = 8080
+        port = 8081
         video_url = f"tcp://{ip_address}:{port}"
         self.cap = cv2.VideoCapture(video_url)
         if not self.cap.isOpened():
             print("Error: Unable to open video stream")
             return
-        while self.cap.isOpened():
+        while self.cap.isOpened() and not self.analysis_running.get():
             try:
                 ret, frame = self.cap.read()
                 # print(frame)
@@ -46,7 +88,10 @@ class LiveStreamHandler(QThread):
                 self.signals.update_frame.emit(frame)
             except Exception as e:
                 print("error while reading video stream: {}".format(e))
+                self.cap.release()
         self.cap.release()
+        self.analysis_running.reset()
+        print("live stream cleaned up")
 
     def terminate(self) -> None:
         print("trying to clean up")
@@ -55,7 +100,7 @@ class LiveStreamHandler(QThread):
         return super().terminate()
 
     def run(self) -> None:
-        self.__receive_stream()
+        self._start_stream()
         self.finished.emit()
 
 
@@ -99,6 +144,9 @@ class DroneControlDialog(QDialog):
         self.finished.connect(self.on_dialog_closed)
         self.ui.clear_msg_button.clicked.connect(self.clear_check_messages)
         self.ui.connect_button.clicked.connect(self.connect)
+        self.ui.livestream_btn.clicked.connect(self.show_livestream)
+        self.ui.start_analysis_btn.clicked.connect(self.start_measurement)
+        self.ui.stop_analysis_btn.clicked.connect(self.stop_measurement)
         self.ui.takeoff_button.clicked.connect(self.perform_takeoff)
         self.ui.land_button.clicked.connect(self.perform_landing)
         self.ui.rtl_button.clicked.connect(self.init_home_return)
@@ -175,7 +223,17 @@ class DroneControlDialog(QDialog):
     def show(self):
         self.exec_()
 
+    def show_livestream(self):
+        self.live_stream_handler.start()
+
+    def start_measurement(self):
+        self.live_stream_handler.record_video()
+
+    def stop_measurement(self):
+        self.live_stream_handler.stop_recording()
+
     def connect(self):
+        self.live_stream_handler.init_connection()
         self.live_stream_handler.start()
         selected_port_name = self.ui.com_combobox.currentText()
         selected_port = self.get_port_from_name(selected_port_name)
