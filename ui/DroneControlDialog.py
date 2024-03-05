@@ -100,6 +100,7 @@ class LiveStreamHandler(QThread):
         return super().terminate()
 
     def run(self) -> None:
+        self.init_connection()
         self._start_stream()
         self.finished.emit()
 
@@ -233,7 +234,6 @@ class DroneControlDialog(QDialog):
         self.live_stream_handler.stop_recording()
 
     def connect(self):
-        self.live_stream_handler.init_connection()
         self.live_stream_handler.start()
         selected_port_name = self.ui.com_combobox.currentText()
         selected_port = self.get_port_from_name(selected_port_name)
