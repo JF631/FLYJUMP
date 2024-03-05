@@ -31,7 +31,16 @@ class LiveStreamHandler(QThread):
 
     def init_connection(self):
         self.ctrl_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.ctrl_socket.connect(('10.42.0.1', 8080))
+        try:
+            self.ctrl_socket.connect(('10.42.0.1', 8080))
+        except TimeoutError as te:
+            print(f"connection timed out with: {te}")
+            self.ctrl_socket = None
+            return
+        except Exception as e:
+            print(f"connection failed with: {e}")
+            self.ctrl_socket = None
+            return
 
     def _start_stream(self):
         if not self.ctrl_socket:
