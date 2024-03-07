@@ -441,7 +441,7 @@ class DroneConnection(QThread):
                 0,
                 self.connection.target_system,
                 self.connection.target_component,
-                12,  # MAV_FRAME_BODY_FRD
+                9,  # MAV_FRAME_BODY_OFFSET_NED
                 int(0b110111000111),  # use velocity
                 x[0],
                 x[1],
