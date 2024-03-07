@@ -28,6 +28,7 @@ class ParameterFile:
         self.__batchsize = 128
         self.__file_path = file_path
         self._hip_height = []
+        self._hip_x = []
         self._right_foot_pos = []
         self._left_foot_pos = []
         self._left_knee_angle = []
@@ -50,7 +51,7 @@ class ParameterFile:
         """
         r_knee_angle, l_knee_angle = frame.knee_angles()
         l_foot_x, l_foot_y, r_foot_x, r_foot_y = 1 - frame.foot_pos().ravel(order="F")
-        hip_height = 1 - frame.centroid_height()
+        hip_pos = 1 - frame.hip_pos()
         frame_key = f"frame_{self.__frame_count}"
         self.__frame_data[frame_key] = {
             "right_knee_angle": r_knee_angle,
@@ -59,7 +60,8 @@ class ParameterFile:
             "right_foot_y": r_foot_y,
             "left_foot_x": l_foot_x,
             "left_foot_y": l_foot_y,
-            "hip_height": hip_height,
+            "hip_x": hip_pos[0],
+            "hip_height": hip_pos[1],
         }
         self.__frame_count += 1
 
@@ -94,6 +96,7 @@ class ParameterFile:
                 frame_group.create_dataset("left_foot_x", data=data["left_foot_x"])
                 frame_group.create_dataset("left_foot_y", data=data["left_foot_y"])
                 frame_group.create_dataset("hip_height", data=data["hip_height"])
+                frame_group.create_dataset("hip_x", data=data["hip_x"])
         self.__frame_data.clear()
 
     def get_video_path(self):
@@ -145,6 +148,7 @@ class ParameterFile:
         -------
         takeoff_frame : int
             number in which the takeoff has been detected
+            if no takeoff frame is saved, None is returned
         """
         file_name = self.get_path()
         rtrn = None
@@ -169,6 +173,7 @@ class ParameterFile:
         - right_foot_height
         - left_foot_height
         - hip height
+        - hip position
 
         The data in the above lists is ordered frame-wise.
         The lists are accessible via own functions (see below).
@@ -176,6 +181,7 @@ class ParameterFile:
         """
         right_foot_y = []
         left_foot_y = []
+        hip_x = []
         hip_height = []
         right_knee_angle = []
         left_knee_angle = []
@@ -195,11 +201,14 @@ class ParameterFile:
                 left_foot_y.append(left_y)
                 hip_y = group["hip_height"][()]
                 hip_height.append(hip_y)
+                hip_x_pos = group["hip_x"][()]
+                hip_x.append(hip_x_pos)
                 right_angle = group["right_knee_angle"][()]
                 right_knee_angle.append(right_angle)
                 left_angle = group["left_knee_angle"][()]
                 left_knee_angle.append(left_angle)
             self._hip_height = np.array(hip_height)
+            self._hip_x = np.array(hip_x)
             self._left_foot_pos = np.array(left_foot_y)
             self._right_foot_pos = np.array(right_foot_y)
             self._right_knee_angle = np.array(right_knee_angle)
@@ -261,6 +270,23 @@ class ParameterFile:
             shape (num_frames,)
         """
         return self._left_foot_pos
+    
+    def get_hip_pos(self):
+        """
+        Relative hip position over timer in a matrix like:
+        [
+            t0: [hip.x, hip.y],
+            t1: [hip.x, hip.y],
+            ...
+        ]
+
+        Returns
+        -------
+        hip_pos : np.ndarray
+            relative hip positions over time as 2D numpy array
+            shape (num_frames, 2)
+        """
+        return np.column_stack((self._hip_x, self._hip_height))
 
     def get_knee_angles(self):
         """
