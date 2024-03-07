@@ -183,8 +183,9 @@ class DroneControlDialog(QDialog):
         fix_type = vehicle_status.get("fix_type")
         self.ui.label_height.setText(str(alt))
         self.ui.label_velocity.setText(str(gnd_speed))
-        self.ui.label_satelites.setText(str(sat_count))
-        self.ui.label_fix_type.setText(str(fix_type))
+        self.ui.label_satelites.setText(str(sat_count) +
+                                        ' satelites visisble')
+        self.ui.label_fix_type.setText(str(fix_type) + 'D')
 
     @pyqtSlot(dict)
     def update_battery_info(self, battery_status):

@@ -29,6 +29,7 @@ class Messages:
 
     GPS_INFO: str = "GPS_RAW_INT"
     GPS_POS_GLOBAL: str = "GLOBAL_POSITION_INT"
+    RNGFND_ALT: str = "DISTANCE_SENSOR"
     HEARTBEAT: str = "HEARTBEAT"
     CMD_RESULT: str = "MAV_RESULT"
     SYS_STATUS: str = "SYS_STATUS"
@@ -150,6 +151,7 @@ class DroneConnection(QThread):
             Messages.SYS_STATUS,
             Messages.GPS_POS_GLOBAL,
             Messages.BATTERY_INFO,
+            Messages.RNGFND_ALT
         ]
         for message in messages_to_request:
             message_id = getattr(mavutil.mavlink, "MAVLINK_MSG_ID_" + message)
@@ -455,12 +457,18 @@ class DroneConnection(QThread):
             )
         )
 
-    def prepare_status_message(self, gps_message, gps_raw_message):
+    def prepare_status_message(self, gps_message, gps_raw_message,
+                               rngfnd_message):
+        alt = rngfnd_message.get("current_distance") / 1e2 # in m
+        '''maximal range of current range finder (benewake tf mini plus) is
+        6m, thus we use gps altitude above 6m'''
+        if alt > 6.0:
+            alt = gps_message.get("relative_alt") / 1e3 # in m
         return {
-            "velocity": gps_raw_message.get("vel") / 100,  # in m/s
-            "relative_alt": gps_message.get("relative_alt") / 1e3,
+            "velocity": gps_raw_message.get("vel") / 1e2,  # in m/s
+            "relative_alt": alt, # in m
             "satelites": gps_raw_message.get("satellites_visible"),
-            "fix_type": gps_raw_message.get("fix_type"),
+            "fix_type": gps_raw_message.get("fix_type") # 1D, 2D, 3D or 4D
         }
 
     def run(self):
@@ -484,14 +492,18 @@ class DroneConnection(QThread):
                 self.signals.connection_changed.emit(False)
             gps_message = self.get_msg(Messages.GPS_INFO, blocking=False)
             gps_global = self.get_msg(Messages.GPS_POS_GLOBAL, blocking=False)
-            if gps_message and gps_global:
+            rngfnd_alt = self.get_msg(Messages.RNGFND_ALT, blocking=False)
+            if gps_message and gps_global and rngfnd_alt:
                 gps_status = self.prepare_status_message(
-                    gps_global.to_dict(), gps_message.to_dict()
+                    gps_global.to_dict(), gps_message.to_dict(),
+                    rngfnd_alt.to_dict(),
                 )
                 self.signals.vehicle_gps_status.emit(gps_status)
-            battery_status = self.get_msg(Messages.BATTERY_INFO, blocking=False)
+            battery_status = self.get_msg(Messages.BATTERY_INFO,
+                                          blocking=False)
             if battery_status:
-                self.signals.vehicle_battery_status.emit(battery_status.to_dict())
+                self.signals.vehicle_battery_status.emit(
+                    battery_status.to_dict())
             # if msg:
             #     print(msg)
             self.check_status()
