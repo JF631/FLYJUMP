@@ -280,7 +280,7 @@ class DroneControlDialog(QDialog):
 
     def perform_takeoff(self):
         self.drone_control.arm()
-        self.drone_control.takeoff(height=9)
+        self.drone_control.takeoff(height=5)
 
     def disarm_drone(self):
         self.drone_control.run_arming_checks()
