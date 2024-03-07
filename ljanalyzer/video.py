@@ -411,7 +411,10 @@ class Video(QRunnable):
                                        knee_angles=knee_angles, full=True)[0]
         if tkf_frame:
             print(f"takeoff detected at {tkf_frame}")
-            param_file.add_metadata(("takeoff", tkf_frame))
+            param_file.add_metadata(('takeoff', tkf_frame))
+            tkf_angle = self.takeoff_angle(takeoff_index=tkf_frame)
+            if tkf_angle:
+                param_file.add_metadata(('takeoff_angle', tkf_angle))
         print(
             f"""video {self.__path} analyzed \n
               lost frames: {self.__frame_count - counter} 
@@ -498,6 +501,41 @@ class Video(QRunnable):
             (e.g. 'C:/FLYJUMP/analysis/2023-01-01/vid0.mp4')
         """
         return self.__output_path
+    
+    def takeoff_angle(self, hip_pos: np.ndarray = None,
+                      takeoff_index: int = None):
+        analysis_path = self.get_analysis_path()
+        if not os.path.exists(analysis_path):
+            print(f"file not found: {analysis_path}!")
+            self.signals.error.emit(self.get_output_path())
+            return None
+        param_file = ParameterFile(analysis_path)
+        if hip_pos is None:
+            param_file.load()
+            hip_pos = param_file.get_hip_pos()
+        print(hip_pos)
+        if not takeoff_index:
+            takeoff_index = param_file.get_takeoff_frame()
+            if not takeoff_index:
+                return
+        frame_offset = int(self.__frame_rate / 10)
+        if takeoff_pos + frame_offset > (len(hip_pos) - 1):
+            return
+        takeoff_pos = hip_pos[takeoff_index, :]
+        offset_pos = hip_pos[takeoff_index[0] + frame_offset, :]
+        hip_vel_vec = offset_pos - takeoff_pos
+        hip_horizontal_vec = np.array([offset_pos[0] - takeoff_pos[0],
+                                       takeoff_pos[1]])
+        hip_vel_vec_norm = np.linalg.norm(hip_vel_vec)
+        hip_horizontal_vec_norm = np.linalg.norm(hip_horizontal_vec)
+        if hip_vel_vec_norm == 0 or hip_horizontal_vec_norm == 0:
+            return
+        return 180 - np.rad2deg(
+            np.arccos(
+                (np.vdot(hip_vel_vec, hip_horizontal_vec))
+                / hip_vel_vec_norm * hip_horizontal_vec_norm
+            )
+        )
 
     def takeoff_frame(self, hip_height: np.ndarray = None,
                       knee_angles: np.ndarray = None, full: bool = False):
