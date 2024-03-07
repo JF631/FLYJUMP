@@ -153,6 +153,8 @@ class Frame:
         """
         if not filter:
             return
+        self.__data = cv2.convertScaleAbs(src=self.__data, dst=self.__data,
+                                          alpha=1.3, beta=0)
         sharpen_kernel = np.array([[0, -1, 0, -1, 5, -1, 0, -1, 0]], dtype="f4")
         blur_kernel = 1 / 9 * np.array([[1, 1, 1, 1, 1, 1, 1, 1, 1]], dtype="f4")
         if filter == Filter.LOWPASS:
