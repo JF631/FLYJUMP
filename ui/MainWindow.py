@@ -18,7 +18,7 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (QFileDialog, QLabel, QMainWindow, QMessageBox,
                              QVBoxLayout)
 
-from ljanalyzer.eval import Filter
+from ljanalyzer.eval import Filter, EvalType
 from ljanalyzer.video import Video
 from utils.controlsignals import ControlSignals, SharedBool
 from utils.filehandler import FileHandler, ParameterFile
@@ -36,6 +36,7 @@ class MainWindow(QMainWindow):
         self.control_signals = ControlSignals()
         self.abort_flag = SharedBool()
         self.ui = Ui_MainWindow()
+        self.setFocusPolicy(Qt.StrongFocus)
         self.ui.setupUi(self)
         self.video_widget = None
         self.setupUi()
@@ -55,16 +56,23 @@ class MainWindow(QMainWindow):
         self.ui.action_load_analysis.triggered.connect(self.choose_analysis_dialog)
         self.ui.action_control_drone.triggered.connect(self.show_drone_control)
         self.ui.start_analysis_btn.pressed.connect(self.start_analysis)
+        self.ui.export_frame_btn.clicked.connect(self.export_frame)
+        self.ui.filtered_out_checkBox.stateChanged.connect(self.set_save_filter_output)
 
     def hide_analysis_params(self):
         self.ui.start_analysis_btn.hide()
         self.ui.filtered_out_checkBox.hide()
         self.ui.filter_combo.hide()
+        self.ui.type_combo.hide()
+        self.ui.export_frame_btn.hide()
+        self.ui.overlay_checkBox.hide()
 
     def show_analysis_params(self):
         self.ui.start_analysis_btn.show()
         self.ui.filtered_out_checkBox.show()
         self.ui.filter_combo.show()
+        self.ui.type_combo.show()
+        self.ui.overlay_checkBox.show()
 
     def setupUi(self):
         # main video widget
@@ -91,6 +99,8 @@ class MainWindow(QMainWindow):
         # combobox for filters
         for filter in Filter:
             self.ui.filter_combo.addItem(filter.name)
+        for eval_type in EvalType:
+            self.ui.type_combo.addItem(eval_type.name)
 
     def __add_matplot_ui(self):
         self.matplot_widget = MatplotCanvas(
@@ -112,7 +122,10 @@ class MainWindow(QMainWindow):
         control_dialog.setWindowFlag(Qt.WindowMaximizeButtonHint, True)
         control_dialog.exec_()
 
-    def __start_video_analaysis(self, file_names, filter: Filter = None):
+    def __start_video_analaysis(self, file_names, filter: Filter = None,
+                                eval_type: EvalType = None,
+                                save_filter_output: bool = False,
+                                analysis_overlay: bool = True):
         """
         Starts one or multiple video analysis Threads.
         One thread per passed file name is created.
@@ -148,6 +161,9 @@ class MainWindow(QMainWindow):
         for file_name in file_names:
             video_task = Video(file_name, self.abort_flag)
             video_task.set_filter(filter)
+            video_task.set_eval_type(eval_type)
+            video_task.set_filter_output(save_filter_output)
+            video_task.set_analysis_overlay(analysis_overlay)
             progress_widget = VideoProgressBar(
                 video_task.get_filename(), video_task.signals
             )
@@ -184,6 +200,7 @@ class MainWindow(QMainWindow):
         self.video_widget.show()
         if not self.matplot_angle or not self.matplot_widget:
             self.__add_matplot_ui()
+        self.ui.export_frame_btn.show()
         param_file = ParameterFile(file_names[0])
         param_file.load()
         takeoff_frame = param_file.get_takeoff_frame()
@@ -209,12 +226,15 @@ class MainWindow(QMainWindow):
         self.matplot_angle.show()
         self.matplot_widget.show()
         self.progressbar_area.clear()
-        self.matplot_widget.plot2D(param_file.get_left_foot_height(), label="left foot")
+        self.matplot_widget.plot2D(param_file.get_left_foot_height(),
+                                   label="left foot")
         self.matplot_widget.plot2D(
             param_file.get_right_foot_height(), label="right foot"
         )
-        self.matplot_widget.plot2D(param_file.get_hip_height(), label="hip height")
-        self.matplot_widget.add_points(takeoff_frame, label="changing points")
+        self.matplot_widget.plot2D(param_file.get_hip_height(),
+                                   label="hip height")
+        self.matplot_widget.add_points(takeoff_frame,
+                                       label="changing points")
         self.matplot_angle.plot2D(
             param_file.get_left_knee_angle(), label="left knee angle"
         )
@@ -222,10 +242,30 @@ class MainWindow(QMainWindow):
             param_file.get_right_knee_angle(), label="right knee angle"
         )
         self.matplot_angle.add_points(takeoff_frame, label="changing points")
-        self.current_video = Video(param_file.get_video_path(), self.abort_flag)
+        self.current_video = Video(param_file.get_video_path(),
+                                   self.abort_flag)
         self.current_video.set_control_signals(self.control_signals)
         self.video_widget.connect_signals(self.current_video.signals)
+        self.ui.takeoff_frame_label.setText(
+            str(param_file.get_takeoff_frame()[0]))
+        self.ui.takeoff_angle_label.setText(
+            str(param_file.get_takeoff_angle()[0]))
         self.current_video.play(first_frame)
+
+    def set_save_filter_output(self, state):
+        if not self.control_signals:
+            return
+        if state == 2:
+            self.control_signals.change_filter_output_mode.emit(True)
+        else:
+            self.control_signals.change_filter_output_mode.emit(False)
+
+    @pyqtSlot()
+    def export_frame(self):
+        file_name, _ = QFileDialog.getSaveFileName(
+            None, "Save current frame", "", "Images (*.jpg)")
+        if file_name:
+            self.control_signals.export_frame.emit(file_name)
 
     @pyqtSlot(str)
     def handle_error(self, error: str):
@@ -282,7 +322,10 @@ class MainWindow(QMainWindow):
         if not self.__analysis_files:
             return
         self.__start_video_analaysis(
-            self.__analysis_files, Filter[self.ui.filter_combo.currentText()]
+            self.__analysis_files, Filter[self.ui.filter_combo.currentText()],
+            EvalType[self.ui.type_combo.currentText()],
+            self.ui.filtered_out_checkBox.isChecked(),
+            self.ui.overlay_checkBox.isChecked()
         )
 
     @pyqtSlot(str)

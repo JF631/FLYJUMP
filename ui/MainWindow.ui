@@ -6,17 +6,17 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>749</width>
-    <height>596</height>
+    <width>655</width>
+    <height>431</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>FLYJUMP</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QHBoxLayout" name="horizontalLayout_2">
+   <layout class="QHBoxLayout" name="horizontalLayout_5">
     <item>
-     <widget class="QSplitter" name="splitter_2">
+     <widget class="QSplitter" name="splitter_3">
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
       </property>
@@ -25,7 +25,7 @@
         <enum>Qt::Vertical</enum>
        </property>
        <widget class="QWidget" name="main_video" native="true"/>
-       <widget class="QWidget" name="layoutWidget">
+       <widget class="QWidget" name="">
         <layout class="QVBoxLayout" name="verticalLayout">
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout">
@@ -40,9 +40,19 @@
             <widget class="QComboBox" name="filter_combo"/>
            </item>
            <item>
+            <widget class="QComboBox" name="type_combo"/>
+           </item>
+           <item>
             <widget class="QCheckBox" name="filtered_out_checkBox">
              <property name="text">
               <string>save filtered video</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QCheckBox" name="overlay_checkBox">
+             <property name="text">
+              <string>position overlay</string>
              </property>
             </widget>
            </item>
@@ -62,22 +72,112 @@
           </layout>
          </item>
          <item>
-          <widget class="QLabel" name="video_loaded_label">
-           <property name="text">
-            <string>loaded video:</string>
-           </property>
-          </widget>
+          <layout class="QHBoxLayout" name="horizontalLayout_4">
+           <item>
+            <widget class="QPushButton" name="export_frame_btn">
+             <property name="text">
+              <string>Export frame</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="video_loaded_label">
+             <property name="text">
+              <string>loaded video:</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <spacer name="horizontalSpacer_2">
+             <property name="orientation">
+              <enum>Qt::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>40</width>
+               <height>20</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+          </layout>
          </item>
         </layout>
        </widget>
       </widget>
-      <widget class="QWidget" name="result_area" native="true">
-       <property name="minimumSize">
-        <size>
-         <width>300</width>
-         <height>0</height>
-        </size>
+      <widget class="QSplitter" name="splitter_2">
+       <property name="orientation">
+        <enum>Qt::Vertical</enum>
        </property>
+       <widget class="QWidget" name="">
+        <layout class="QVBoxLayout" name="verticalLayout_2">
+         <item>
+          <widget class="QLabel" name="label">
+           <property name="font">
+            <font>
+             <pointsize>14</pointsize>
+             <weight>75</weight>
+             <bold>true</bold>
+             <underline>true</underline>
+            </font>
+           </property>
+           <property name="layoutDirection">
+            <enum>Qt::LeftToRight</enum>
+           </property>
+           <property name="text">
+            <string>Analysis results</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_2">
+           <item>
+            <widget class="QLabel" name="label_2">
+             <property name="text">
+              <string>Takeoff frame: </string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="takeoff_frame_label">
+             <property name="text">
+              <string/>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_3">
+           <item>
+            <widget class="QLabel" name="label_4">
+             <property name="text">
+              <string>Takeoff angle: </string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="takeoff_angle_label">
+             <property name="text">
+              <string/>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="result_area" native="true">
+        <property name="minimumSize">
+         <size>
+          <width>300</width>
+          <height>0</height>
+         </size>
+        </property>
+       </widget>
       </widget>
      </widget>
     </item>
@@ -88,7 +188,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>749</width>
+     <width>655</width>
      <height>22</height>
     </rect>
    </property>

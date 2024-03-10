@@ -1,7 +1,10 @@
+import random
+
 import matplotlib
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtWidgets import QVBoxLayout, QWidget
+from PyQt5.QtGui import QColor, QPen
 from qwt import QwtLegend, QwtPlot, QwtPlotCurve
 
 matplotlib.use("Qt5Agg")
@@ -289,6 +292,9 @@ class Plot(QWidget):
         self.curves: QwtPlotCurve = []
         for title in curve_titles:
             curve = QwtPlotCurve(title)
+            color = QColor(random.randint(0, 255), random.randint(0, 255),
+                           random.randint(0, 255))
+            curve.setPen(QPen(color, 3))
             self.curves.append(curve)
             curve.attach(self.plot)
 
