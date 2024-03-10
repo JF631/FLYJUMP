@@ -68,3 +68,6 @@ class ControlSignals(QObject):
 
     terminate = pyqtSignal()
     jump_to_frame = pyqtSignal(int)
+    export_frame = pyqtSignal(str)
+    change_overlay_mode = pyqtSignal(bool)
+    change_filter_output_mode = pyqtSignal(bool)

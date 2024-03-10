@@ -12,7 +12,7 @@ import time
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
-from PyQt5.QtCore import QObject, QRunnable, pyqtSignal
+from PyQt5.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
 from utils.controlsignals import ControlSignals, SharedBool
 from utils.exception import FileNotFoundException, GeneralException
@@ -107,10 +107,14 @@ class Video(QRunnable):
         self.__frame_rate = 0
         self.dims = (0, 0, 0)
         self.__stop_flag = False
+        self.__current_frame = Frame()
+        self.__cap: cv2.VideoCapture = None
         self.__open(path)
         self.__path = path
         self.__output_path = path
-        self.__detector = PoseDetector(Input.VIDEO, EvalType.FULL)
+        self.__detector = PoseDetector(Input.VIDEO, EvalType.REALTIME)
+        self.__marker_overlay = True
+        self.__save_filter_output = False
         self.__frame_buffer = FrameBuffer(
             self.__frame_count, self.dims, maxsize=2048, lock=True
         )
@@ -118,7 +122,6 @@ class Video(QRunnable):
         self.abort = abort
         self.__filter: Filter = None
         self.__playback = False
-        self.__cap: cv2.VideoCapture = None
 
     def terminate(self) -> None:
         """
@@ -126,8 +129,40 @@ class Video(QRunnable):
         """
         print(f"trying to abort analysis: {self.get_output_path()}")
         self.signals.error.emit(self.get_output_path())
+    
+    def set_analysis_overlay(self, as_overlay: bool):
+        '''
+        switch analysis mode between overlay and not overlay.
+        If false, body key points are shown on black background
+        '''
+        if self.__marker_overlay == as_overlay:
+            return
+        self.__marker_overlay = as_overlay
 
-    def __ground_contact(self, prev_foot_pos: np.ndarray, curr_foot_pos: np.ndarray):
+    def set_filter_output(self, output: bool):
+        '''
+        switch analysis mode between saving filter output.
+        If false, the filtered output is not saved.
+        '''
+        if self.__save_filter_output == output:
+            return
+        print(f"filter output mode changed to: {output}")
+        self.__save_filter_output = output
+
+    def export_frame(self, path: str):
+        '''
+        Export current frame as image.
+        Image is saved as path
+
+        Parameters
+        ----------
+        path : str
+            path to save the exported frame
+        '''
+        cv2.imwrite(path, self.__current_frame.data())
+
+    def __ground_contact(self, prev_foot_pos: np.ndarray,
+                         curr_foot_pos: np.ndarray):
         """
         Tries to detect if a foot is on ground.
         As it uses velocity as main parameter for detection, at least two foot
@@ -156,27 +191,27 @@ class Video(QRunnable):
         path : str
             path to video file.
         """
-        cap = cv2.VideoCapture(path)
-        if not cap.isOpened():
+        self.__cap = cv2.VideoCapture(path)
+        if not self.__cap.isOpened():
             raise FileNotFoundException(
                 f"""file could not be opened - check
                                         file path {path}"""
             )
-        self.__frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        self.__frame_rate = cap.get(cv2.CAP_PROP_FPS)
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.__frame_count = int(self.__cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.__frame_rate = self.__cap.get(cv2.CAP_PROP_FPS)
+        height = int(self.__cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        width = int(self.__cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.dims = (height, width, 3)
-        valid, data = cap.read()
+        valid, data = self.__cap.read()
         if not valid:
             self.__video_completed.set()
             raise GeneralException(
                 f"""OpenCV could not read from video file
                                    {path}"""
             )
-        frame = Frame(data)
-        self.signals.update_frame.emit(frame)
-        cap.release()
+        self.__current_frame.update(data)
+        self.signals.update_frame.emit(self.__current_frame)
+        # self.__cap.release()
 
     def play(self, frame=None):
         """
@@ -190,10 +225,20 @@ class Video(QRunnable):
         """
         self.__cap = cv2.VideoCapture(self.__path)
         self.__playback = True
-        current_frame = Frame()
+        param_file = ParameterFile(self.get_analysis_path())
+        param_file.load()
+        takeoff_parm = param_file.get_takeoff_angle()
+        takeoff_vec = None
+        if takeoff_parm is not None:
+            takeoff_vec = np.array([takeoff_parm[1], takeoff_parm[2]])
         if frame:
             self.__playback = False
             self.jump_to_frame(frame)
+            if takeoff_vec is not None:
+                dir_sign = np.sign(takeoff_vec[0] - takeoff_vec[1])
+                self.show_hip_vector(frame, takeoff_vec)
+                horizontal_vec = dir_sign * np.array([0.1, 0])
+                self.show_hip_vector(frame, horizontal_vec)
         while self.__cap.isOpened():
             if self.abort.get() or self.__stop_flag:
                 self.terminate()
@@ -202,8 +247,8 @@ class Video(QRunnable):
                 valid, frame = self.__cap.read()
                 if not valid:
                     break
-                current_frame.update(frame)
-                self.signals.update_frame.emit(current_frame)
+                self.__current_frame.update(frame)
+                self.signals.update_frame.emit(self.__current_frame)
             if cv2.waitKey(int(self.__frame_rate)) & 0xFF == ord("q"):
                 self.terminate()
                 break
@@ -272,15 +317,17 @@ class Video(QRunnable):
             be created
         """
         if frame > self.__frame_count or frame < 0:
+            print('frame index too large')
             return
         if not self.__cap:
+            print('nothing to play')
             return
         self.pause()
         self.__cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
         valid, frame = self.__cap.read()
         if valid:
-            current_frame = Frame(frame)
-            self.signals.update_frame.emit(current_frame)
+            self.__current_frame.update(frame)
+            self.signals.update_frame.emit(self.__current_frame)
 
     def __read_video_file(self):
         """
@@ -304,7 +351,18 @@ class Video(QRunnable):
         print("released input")
 
     def set_filter(self, filter: Filter):
+        '''
+        set filter to use during video analysis
+        '''
         self.__filter = filter
+    
+    def set_eval_type(self, eval_type: EvalType):
+        '''
+        set Evaluation type to use during video analysis
+        '''
+        if eval_type.name == self.__detector.get_eval_type():
+            return
+        self.__detector = PoseDetector(Input.VIDEO, eval_type)
 
     def __perform_pose_detection(self):
         """
@@ -328,7 +386,7 @@ class Video(QRunnable):
         foot_pos2 = np.empty((2, 2), dtype="f4")
         counter = 0
         analyzed_counter = 0
-        frame = Frame(self.__frame_buffer.pop())
+        self.__current_frame.update(self.__frame_buffer.pop())
         param_file = ParameterFile(self.get_analysis_path(), self.signals)
         while True:
             if self.abort.get():
@@ -336,21 +394,25 @@ class Video(QRunnable):
                 break
             if self.__frame_buffer.current_frames() > 0:
                 start = time.time()
-                frame.update(self.__frame_buffer.pop())
+                self.__current_frame.update(self.__frame_buffer.pop())
                 playback = True
-                if frame is None:
+                if self.__current_frame is None:
                     print("Empty frame received")
                     break
-                frame.pre_process(self.__filter, inplace=True)
+                self.__current_frame.pre_process(
+                    self.__filter, inplace=self.__save_filter_output
+                )
                 res = self.__detector.get_body_key_points(
-                    frame.to_mediapipe_image(), counter
+                    self.__current_frame.to_mediapipe_image(), counter
                 )
                 if res.pose_landmarks:
-                    frame.annotate(res.pose_landmarks, as_overlay=True)
-                    param_file.save(frame)
+                    self.__current_frame.annotate(
+                        res.pose_landmarks, as_overlay=self.__marker_overlay
+                    )
+                    param_file.save(self.__current_frame)
                     if counter == 0:
-                        foot_pos = frame.foot_pos()
-                        hip_pos = frame.hip_pos()
+                        foot_pos = self.__current_frame.foot_pos()
+                        hip_pos = self.__current_frame.hip_pos()
                         if (
                             np.any(foot_pos > 1.0)
                             or np.any(foot_pos < 0.0)
@@ -359,43 +421,43 @@ class Video(QRunnable):
                         ):
                             continue
                     if (counter % velocity_frames) == 0:
-                        foot_pos2 = frame.foot_pos()
-                        if self.__ground_contact(foot_pos, foot_pos2):
-                            cv2.putText(
-                                frame.data(),
-                                "GROUND_CONTACT",
-                                (10, 120),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                1,
-                                (0, 0, 255),
-                                2,
-                            )
+                        foot_pos2 = self.__current_frame.foot_pos()
+                        # if self.__ground_contact(foot_pos, foot_pos2):
+                        #     cv2.putText(
+                        #         self.__current_frame.data(),
+                        #         "GROUND_CONTACT",
+                        #         (10, 120),
+                        #         cv2.FONT_HERSHEY_SIMPLEX,
+                        #         1,
+                        #         (0, 0, 255),
+                        #         2,
+                        #     )
                         foot_pos = foot_pos2
                     end = time.time()
                     fps = 1 / (end - start)
-                    cv2.putText(
-                        frame.data(),
-                        f"FPS: {fps:.2f} frame: {analyzed_counter}",
-                        (10, 60),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        1,
-                        (0, 0, 255),
-                        2,
-                    )
-                    hip_height.append(1 - frame.hip_pos()[1])
-                    knee_angles.append(frame.knee_angles())
+                    # cv2.putText(
+                    #     self.__current_frame.data(),
+                    #     f"FPS: {fps:.2f} frame: {analyzed_counter}",
+                    #     (10, 60),
+                    #     cv2.FONT_HERSHEY_SIMPLEX,
+                    #     1,
+                    #     (0, 0, 255),
+                    #     2,
+                    # )
+                    hip_height.append(1 - self.__current_frame.hip_pos()[1])
+                    knee_angles.append(self.__current_frame.knee_angles())
                     frame_params = np.hstack(
                         (
                             1 - foot_pos[1],  # foot height
-                            1 - frame.hip_pos().reshape(-1, 1)[1],  # hip height
-                            frame.knee_angles(),
+                            1 - self.__current_frame.hip_pos().reshape(-1, 1)[1],  # hip height
+                            self.__current_frame.knee_angles(),
                         )
                     ).reshape(
                         1, -1
                     )  # expected to have at least one row
                     self.signals.update_frame_parameters.emit(frame_params)
-                    self.signals.update_frame.emit(frame)
-                    out.write(frame.data())
+                    self.signals.update_frame.emit(self.__current_frame)
+                    out.write(self.__current_frame.data())
                     analyzed_counter += 1
                 counter += 1
                 self.update_progress(int((counter / self.__frame_count) * 100))
@@ -404,17 +466,18 @@ class Video(QRunnable):
             elif playback and self.__video_completed.is_set():
                 break
         out.release()
-        frame.clear()
+        # self.__current_frame.clear()s
         lost_frames = (1 - (counter / self.__frame_count)) * 100
         param_file.close()
         tkf_frame = self.takeoff_frame(hip_height=hip_height,
-                                       knee_angles=knee_angles, full=True)[0]
+                                       knee_angles=knee_angles, full=False)
         if tkf_frame:
             print(f"takeoff detected at {tkf_frame}")
             param_file.add_metadata(('takeoff', tkf_frame))
             tkf_angle = self.takeoff_angle(takeoff_index=tkf_frame)
             if tkf_angle:
                 param_file.add_metadata(('takeoff_angle', tkf_angle))
+                print(f'takeoff angle saved: {tkf_angle}')
         print(
             f"""video {self.__path} analyzed \n
               lost frames: {self.__frame_count - counter} 
@@ -502,8 +565,56 @@ class Video(QRunnable):
         """
         return self.__output_path
     
+    def show_hip_vector(self, frame_index: int, vector: np.ndarray):
+        '''
+        Visualize vector with origin on CM position.
+        The annotation is NOT saved persistantly.
+
+        Parameters
+        ----------
+        frame_index : int
+            frame to draw the vector on
+        vector : np.ndarray
+            directional vector.
+            [x-dir, y-dir].
+        '''
+        analysis_path = self.get_analysis_path()
+        param_file = ParameterFile(analysis_path)
+        param_file.load()
+        start_point = 1 - param_file.get_hip_pos(index=frame_index)
+        width_height = self.dims[:2][::-1]
+        sp = np.int32(start_point * width_height)
+        ep = np.int32((start_point + vector) * width_height)
+        cv2.arrowedLine(self.__current_frame.data(), sp, ep, (0, 255, 0), 2)
+        self.__current_frame.update(self.__current_frame.data())
+        self.signals.update_frame.emit(self.__current_frame)
+
+    
     def takeoff_angle(self, hip_pos: np.ndarray = None,
                       takeoff_index: int = None):
+        '''
+        Calculates takeoff angle to a given takeoff frame index.
+        Takeoff angle is defined as angle between horizontal CM vector
+        the velocity vector of the CM.
+        The velocity vector is calculated over frame_rate / 10 frames.
+
+        Parameters
+        ----------
+        hip_pos : np.ndarray
+            hip position array of the respective x and y coordinates holding
+            the hip positions for each frame
+            if None it is automatically retrieved from the parameter file.
+        takeoff_index : int
+            index of the takeoff frame.
+            if None, it is automatically retrieved from the parameter file.
+        
+        Returns
+        -------
+        takeoff_angle : float
+            calculated takeoff angle.
+            if something went wrong, None is returned (e.g. no takeoff frame
+            was found in parameter file)
+        '''
         analysis_path = self.get_analysis_path()
         if not os.path.exists(analysis_path):
             print(f"file not found: {analysis_path}!")
@@ -513,29 +624,29 @@ class Video(QRunnable):
         if hip_pos is None:
             param_file.load()
             hip_pos = param_file.get_hip_pos()
-        print(hip_pos)
         if not takeoff_index:
             takeoff_index = param_file.get_takeoff_frame()
             if not takeoff_index:
-                return
+                return None
+        self.jump_to_frame(takeoff_index[0])
         frame_offset = int(self.__frame_rate / 10)
-        if takeoff_pos + frame_offset > (len(hip_pos) - 1):
-            return
-        takeoff_pos = hip_pos[takeoff_index, :]
-        offset_pos = hip_pos[takeoff_index[0] + frame_offset, :]
-        hip_vel_vec = offset_pos - takeoff_pos
-        hip_horizontal_vec = np.array([offset_pos[0] - takeoff_pos[0],
-                                       takeoff_pos[1]])
+        if takeoff_index[0] + frame_offset > (len(hip_pos) - 1):
+            return None
+        takeoff_pos = 1 - hip_pos[takeoff_index[0], :]
+        offset_pos = 1 -  hip_pos[takeoff_index[0] + frame_offset, :]
+        dir_sign = np.sign(offset_pos[0] - takeoff_pos[0])
+        hip_vel_vec = (-1 / frame_offset) * (takeoff_pos - offset_pos)
+        hip_horizontal_vec = dir_sign * np.array([1, 0])
+        hip_vel_vec *= 20
+        hip_horizontal_vec *= 20
         hip_vel_vec_norm = np.linalg.norm(hip_vel_vec)
         hip_horizontal_vec_norm = np.linalg.norm(hip_horizontal_vec)
         if hip_vel_vec_norm == 0 or hip_horizontal_vec_norm == 0:
-            return
-        return 180 - np.rad2deg(
-            np.arccos(
-                (np.vdot(hip_vel_vec, hip_horizontal_vec))
-                / hip_vel_vec_norm * hip_horizontal_vec_norm
-            )
-        )
+            return None
+        rtrn = np.rad2deg(
+            np.arccos((np.dot(hip_vel_vec, hip_horizontal_vec)) / 
+                      (hip_vel_vec_norm * hip_horizontal_vec_norm)))
+        return (rtrn, *hip_vel_vec)
 
     def takeoff_frame(self, hip_height: np.ndarray = None,
                       knee_angles: np.ndarray = None, full: bool = False):
@@ -665,3 +776,6 @@ class Video(QRunnable):
         """
         self.control_signals = control_signals
         self.control_signals.jump_to_frame.connect(self.jump_to_frame)
+        self.control_signals.export_frame.connect(self.export_frame)
+        self.control_signals.change_filter_output_mode.connect(
+            self.set_filter_output)
