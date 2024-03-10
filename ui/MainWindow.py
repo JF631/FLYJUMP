@@ -297,6 +297,9 @@ class MainWindow(QMainWindow):
             "HDF5 Files (*.h5 *.hdf5);;All Files (*)",
             options=dialog_options,
         )
+        if not file_names:
+            return
+        self.ui.video_loaded_label.setText('loaded:' + ', '.join(file_names))
         self.__show_analysis_result(file_names)
 
     @pyqtSlot()
@@ -313,9 +316,11 @@ class MainWindow(QMainWindow):
             "Video Files (*.mp4 *.avi *.mkv *.mov);;All Files (*)",
             options=dialog_options,
         )
-        self.show_analysis_params()
-        self.ui.video_loaded_label.setText(", ".join(file_names))
         self.__analysis_files = file_names
+        if len(file_names) <= 0:
+            return
+        self.ui.video_loaded_label.setText(", ".join(file_names))
+        self.show_analysis_params()
 
     @pyqtSlot()
     def start_analysis(self):
