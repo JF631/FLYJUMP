@@ -154,7 +154,24 @@ class ParameterFile:
         rtrn = None
         with h5py.File(file_name, "r") as param_file:
             rtrn = param_file.attrs.get("takeoff", None)
+        return rtrn
+    
 
+    def get_takeoff_angle(self) -> tuple:
+        """
+        get takeoff angle and vector from parameter file.
+
+        Returns
+        -------
+        takeoff_angle : tuple
+            takeoff angle and takeoff vector that has been detected
+            (angle, vector.x, vector.y)
+            if no takeoff angl  is saved, None is returned
+        """
+        file_name = self.get_path()
+        rtrn = None
+        with h5py.File(file_name, "r") as param_file:
+            rtrn = param_file.attrs.get("takeoff_angle", None)
         return rtrn
 
     def close(self):
@@ -234,6 +251,7 @@ class ParameterFile:
         plt.legend()
         file_name = "angles.png"
         plt.savefig(file_name)
+        plt.close()
 
     def get_hip_height(self):
         """
@@ -271,7 +289,7 @@ class ParameterFile:
         """
         return self._left_foot_pos
     
-    def get_hip_pos(self):
+    def get_hip_pos(self, index: int = None):
         """
         Relative hip position over timer in a matrix like:
         [
@@ -286,6 +304,8 @@ class ParameterFile:
             relative hip positions over time as 2D numpy array
             shape (num_frames, 2)
         """
+        if index:
+            return np.array([self._hip_x[index], self._hip_height[index]])
         return np.column_stack((self._hip_x, self._hip_height))
 
     def get_knee_angles(self):
