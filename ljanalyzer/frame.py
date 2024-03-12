@@ -83,12 +83,16 @@ class Frame:
             knee angle in degrees.
         """
         hip, knee, foot = key_points
-        hip_knee_vec = np.array([knee.x - hip.x, knee.y - hip.y], dtype="f4")
-        knee_foot_vec = np.array([foot.x - knee.x, foot.y - knee.y], dtype="f4")
+        hip_knee_vec = np.array([hip.x - knee.x, hip.y - knee.y], dtype="f4")
+        knee_foot_vec = np.array([knee.x - foot.x, knee.y - foot.y], dtype="f4")
+        hip_knee_vec_norm = np.linalg.norm(hip_knee_vec)
+        knee_foot_vec_norm = np.linalg.norm(knee_foot_vec)
+        if knee_foot_vec_norm == 0 or hip_knee_vec_norm == 0:
+            return np.nan
         return 180 - np.rad2deg(
             np.arccos(
-                (np.vdot(hip_knee_vec, knee_foot_vec))
-                / (np.linalg.norm(hip_knee_vec) * np.linalg.norm(knee_foot_vec))
+                (np.dot(hip_knee_vec, knee_foot_vec))
+                / (hip_knee_vec_norm * knee_foot_vec_norm)
             )
         )
 
@@ -112,16 +116,6 @@ class Frame:
             self.__hip_position = np.array([pose[24].x, pose[24].y])
             self.__right_knee_angle = self.__calc_knee_angle(pose[24:30:2])
             self.__left_knee_angle = self.__calc_knee_angle(pose[23:29:2])
-            # cv2.putText(
-            #     self.__data,
-            #     f"""right: {self.__right_knee_angle:.4f}
-            #             left:{self.__left_knee_angle:.4f}""",
-            #     (10, 30),
-            #     cv2.FONT_HERSHEY_SIMPLEX,
-            #     1,
-            #     (0, 0, 255),
-            #     2,
-            # )
             pose_proto = landmark_pb2.NormalizedLandmarkList()
             pose_proto.landmark.extend(
                 [

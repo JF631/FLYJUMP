@@ -65,7 +65,6 @@ class VideoSignals(QObject):
     update_frame = pyqtSignal(Frame)
     update_frame_parameters = pyqtSignal(np.ndarray)
 
-
 class Video(QRunnable):
     """
     Abstraction of a video file.
@@ -115,6 +114,7 @@ class Video(QRunnable):
         self.__detector = PoseDetector(Input.VIDEO, EvalType.REALTIME)
         self.__marker_overlay = True
         self.__save_filter_output = False
+        self.__show_velocity_vectors = False
         self.__frame_buffer = FrameBuffer(
             self.__frame_count, self.dims, maxsize=2048, lock=True
         )
@@ -148,6 +148,14 @@ class Video(QRunnable):
             return
         print(f"filter output mode changed to: {output}")
         self.__save_filter_output = output
+    
+    def set_velocity_vectors(self, show_vectors: bool):
+        '''
+        enable or disable velocity vector calculation during analysis
+        '''
+        if show_vectors == self.__show_velocity_vectors:
+            return
+        self.__show_velocity_vectors = show_vectors
 
     def export_frame(self, path: str):
         '''
@@ -213,7 +221,7 @@ class Video(QRunnable):
         self.signals.update_frame.emit(self.__current_frame)
         # self.__cap.release()
 
-    def play(self, frame=None):
+    def play(self, frame_index=None):
         """
         starts video playback for the current video.
 
@@ -231,14 +239,15 @@ class Video(QRunnable):
         takeoff_vec = None
         if takeoff_parm is not None:
             takeoff_vec = np.array([takeoff_parm[1], takeoff_parm[2]])
-        if frame:
+        if frame_index:
             self.__playback = False
-            self.jump_to_frame(frame)
+            self.jump_to_frame(frame_index)
             if takeoff_vec is not None:
                 dir_sign = np.sign(takeoff_vec[0] - takeoff_vec[1])
-                self.show_hip_vector(frame, takeoff_vec)
+                self.show_hip_vector(frame_index, takeoff_vec)
                 horizontal_vec = dir_sign * np.array([0.1, 0])
-                self.show_hip_vector(frame, horizontal_vec)
+                self.show_hip_vector(frame_index, horizontal_vec,
+                                     color=(255, 0, 0))
         while self.__cap.isOpened():
             if self.abort.get() or self.__stop_flag:
                 self.terminate()
@@ -252,7 +261,8 @@ class Video(QRunnable):
             if cv2.waitKey(int(self.__frame_rate)) & 0xFF == ord("q"):
                 self.terminate()
                 break
-        self.__cap.release()
+        # self.__cap.release()
+        self.jump_to_frame(frame_index)
         cv2.destroyAllWindows()
 
     def rewind(self):
@@ -381,12 +391,14 @@ class Video(QRunnable):
         hip_height = []
         knee_angles = []
         lost_frames = 0
-        velocity_frames = 2
-        foot_pos = np.empty((2, 2), dtype="f4")
-        foot_pos2 = np.empty((2, 2), dtype="f4")
+        velocity_frames = 1
         counter = 0
         analyzed_counter = 0
         self.__current_frame.update(self.__frame_buffer.pop())
+        foot_pos = np.empty((2,2), dtype='f4')
+        hip_pos = np.empty((2,), dtype='f4')
+        prev_hip_pos = np.empty_like(hip_pos)
+        vel_vec = np.empty((2,), dtype='f4')
         param_file = ParameterFile(self.get_analysis_path(), self.signals)
         while True:
             if self.abort.get():
@@ -409,47 +421,32 @@ class Video(QRunnable):
                     self.__current_frame.annotate(
                         res.pose_landmarks, as_overlay=self.__marker_overlay
                     )
+                    foot_pos = self.__current_frame.foot_pos()
+                    hip_pos = self.__current_frame.hip_pos()
+                    if (
+                        np.any(foot_pos > 1.0)
+                        or np.any(foot_pos < 0.0)
+                        or np.any(hip_pos > 1.0)
+                        or np.any(hip_pos < 0.0)
+                    ):
+                        continue
                     param_file.save(self.__current_frame)
-                    if counter == 0:
-                        foot_pos = self.__current_frame.foot_pos()
-                        hip_pos = self.__current_frame.hip_pos()
-                        if (
-                            np.any(foot_pos > 1.0)
-                            or np.any(foot_pos < 0.0)
-                            or np.any(hip_pos > 1.0)
-                            or np.any(hip_pos < 0.0)
-                        ):
-                            continue
-                    if (counter % velocity_frames) == 0:
-                        foot_pos2 = self.__current_frame.foot_pos()
-                        # if self.__ground_contact(foot_pos, foot_pos2):
-                        #     cv2.putText(
-                        #         self.__current_frame.data(),
-                        #         "GROUND_CONTACT",
-                        #         (10, 120),
-                        #         cv2.FONT_HERSHEY_SIMPLEX,
-                        #         1,
-                        #         (0, 0, 255),
-                        #         2,
-                        #     )
-                        foot_pos = foot_pos2
+                    if self.__show_velocity_vectors:
+                        if (counter % velocity_frames) == 0:
+                            vel_vec = hip_pos - prev_hip_pos
+                            self.show_vector(hip_pos, vel_vec, scale=10.0)
+                            prev_hip_pos = hip_pos
+                    foot_pos = self.__current_frame.foot_pos()
+                    hip_pos = self.__current_frame.hip_pos()
+                    vel_vec = hip_pos - prev_hip_pos
                     end = time.time()
                     fps = 1 / (end - start)
-                    # cv2.putText(
-                    #     self.__current_frame.data(),
-                    #     f"FPS: {fps:.2f} frame: {analyzed_counter}",
-                    #     (10, 60),
-                    #     cv2.FONT_HERSHEY_SIMPLEX,
-                    #     1,
-                    #     (0, 0, 255),
-                    #     2,
-                    # )
-                    hip_height.append(1 - self.__current_frame.hip_pos()[1])
+                    hip_height.append(1 - hip_pos[1])
                     knee_angles.append(self.__current_frame.knee_angles())
                     frame_params = np.hstack(
                         (
                             1 - foot_pos[1],  # foot height
-                            1 - self.__current_frame.hip_pos().reshape(-1, 1)[1],  # hip height
+                            1 - hip_pos.reshape(-1, 1)[1],  # hip height
                             self.__current_frame.knee_angles(),
                         )
                     ).reshape(
@@ -565,7 +562,20 @@ class Video(QRunnable):
         """
         return self.__output_path
     
-    def show_hip_vector(self, frame_index: int, vector: np.ndarray):
+    def show_vector(self, start_point: np.ndarray, vec: np.ndarray,
+                    color: tuple = (0, 255, 0), scale:float = 1.0):
+        '''
+        adds a vector to the current frame with a given scale.
+        '''
+        vec *= scale
+        width_height = self.dims[:2][::-1]
+        sp = np.int32(start_point * width_height)
+        ep = np.int32((start_point + vec) * width_height)
+        cv2.arrowedLine(self.__current_frame.data(), sp, ep, color, 2)
+
+    
+    def show_hip_vector(self, frame_index: int, vector: np.ndarray,
+                        color: tuple = (0, 255, 0)):
         '''
         Visualize vector with origin on CM position.
         The annotation is NOT saved persistantly.
@@ -585,11 +595,35 @@ class Video(QRunnable):
         width_height = self.dims[:2][::-1]
         sp = np.int32(start_point * width_height)
         ep = np.int32((start_point + vector) * width_height)
-        cv2.arrowedLine(self.__current_frame.data(), sp, ep, (0, 255, 0), 2)
+        cv2.arrowedLine(self.__current_frame.data(), sp, ep, color, 2)
         self.__current_frame.update(self.__current_frame.data())
         self.signals.update_frame.emit(self.__current_frame)
 
-    
+    @staticmethod
+    def angle(vec1: np.ndarray, vec2: np.ndarray):
+        '''
+        calculates the angle between two vectors
+
+        Parameters
+        ----------
+        vec1 : np.ndarray
+            first vector
+        vec2 : np.ndarray
+            second vector
+        
+        Returns
+        -------
+        angle : float
+            angle between vec1 and vec2 in degrees
+        '''
+        vec1_norm = np.linalg.norm(vec1)
+        vec2_norm = np.linalg.norm(vec2)
+        if vec1_norm == 0 or vec2_norm == 0:
+            return None
+        return np.rad2deg(
+            np.arccos((np.dot(vec1, vec2)) / 
+                      (vec1_norm * vec2_norm)))
+
     def takeoff_angle(self, hip_pos: np.ndarray = None,
                       takeoff_index: int = None):
         '''
@@ -639,14 +673,8 @@ class Video(QRunnable):
         hip_horizontal_vec = dir_sign * np.array([1, 0])
         hip_vel_vec *= 20
         hip_horizontal_vec *= 20
-        hip_vel_vec_norm = np.linalg.norm(hip_vel_vec)
-        hip_horizontal_vec_norm = np.linalg.norm(hip_horizontal_vec)
-        if hip_vel_vec_norm == 0 or hip_horizontal_vec_norm == 0:
-            return None
-        rtrn = np.rad2deg(
-            np.arccos((np.dot(hip_vel_vec, hip_horizontal_vec)) / 
-                      (hip_vel_vec_norm * hip_horizontal_vec_norm)))
-        return (rtrn, *hip_vel_vec)
+        angle = Video.angle(hip_vel_vec, hip_horizontal_vec)
+        return (angle, *hip_vel_vec)
 
     def takeoff_frame(self, hip_height: np.ndarray = None,
                       knee_angles: np.ndarray = None, full: bool = False):

@@ -66,6 +66,7 @@ class MainWindow(QMainWindow):
         self.ui.type_combo.hide()
         self.ui.export_frame_btn.hide()
         self.ui.overlay_checkBox.hide()
+        self.ui.velocity_checkBox.hide()
 
     def show_analysis_params(self):
         self.ui.start_analysis_btn.show()
@@ -73,6 +74,7 @@ class MainWindow(QMainWindow):
         self.ui.filter_combo.show()
         self.ui.type_combo.show()
         self.ui.overlay_checkBox.show()
+        self.ui.velocity_checkBox.show()
 
     def setupUi(self):
         # main video widget
@@ -125,7 +127,8 @@ class MainWindow(QMainWindow):
     def __start_video_analaysis(self, file_names, filter: Filter = None,
                                 eval_type: EvalType = None,
                                 save_filter_output: bool = False,
-                                analysis_overlay: bool = True):
+                                analysis_overlay: bool = True,
+                                velocity_vectors: bool = False):
         """
         Starts one or multiple video analysis Threads.
         One thread per passed file name is created.
@@ -164,6 +167,7 @@ class MainWindow(QMainWindow):
             video_task.set_eval_type(eval_type)
             video_task.set_filter_output(save_filter_output)
             video_task.set_analysis_overlay(analysis_overlay)
+            video_task.set_velocity_vectors(velocity_vectors)
             progress_widget = VideoProgressBar(
                 video_task.get_filename(), video_task.signals
             )
@@ -330,7 +334,8 @@ class MainWindow(QMainWindow):
             self.__analysis_files, Filter[self.ui.filter_combo.currentText()],
             EvalType[self.ui.type_combo.currentText()],
             self.ui.filtered_out_checkBox.isChecked(),
-            self.ui.overlay_checkBox.isChecked()
+            self.ui.overlay_checkBox.isChecked(),
+            self.ui.velocity_checkBox.isChecked()
         )
 
     @pyqtSlot(str)

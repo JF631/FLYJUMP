@@ -22,7 +22,6 @@ class ParameterFile:
     """
 
     def __init__(self, file_path: str, signals=None) -> None:
-        # self.check_and_delete(file_path)
         self.__frame_data = {}
         self.__frame_count = 0
         self.__batchsize = 128
@@ -33,6 +32,7 @@ class ParameterFile:
         self._left_foot_pos = []
         self._left_knee_angle = []
         self._right_knee_angle = []
+        # self.check_and_delete(file_path)
         if signals:
             signals.error.connect(self.close)
 
