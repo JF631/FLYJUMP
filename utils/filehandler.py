@@ -230,7 +230,6 @@ class ParameterFile:
             self._right_foot_pos = np.array(right_foot_y)
             self._right_knee_angle = np.array(right_knee_angle)
             self._left_knee_angle = np.array(left_knee_angle)
-            self.plot()
 
     def plot(self):
         plt.figure()
@@ -311,6 +310,7 @@ class ParameterFile:
     def get_knee_angles(self):
         """
         Absolute knee angles over time.
+        [right_angle, left_angle]
 
         Returns
         -------
