@@ -112,6 +112,7 @@ class PoseDetector:
         if self.input_type == Input.VIDEO:
             running_mode = vision_running_mode.VIDEO
         options = vision.PoseLandmarkerOptions(
-            base_options=base_options, running_mode=running_mode
+            base_options=base_options, running_mode=running_mode,
+            min_pose_detection_confidence=0.6
         )
         return vision.PoseLandmarker.create_from_options(options)
