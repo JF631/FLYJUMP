@@ -1,10 +1,13 @@
+#Jump analysis related
 mediapipe
 numpy
+numba
 opencv-python
 psutil
+h5py
+#GUI related
 pyqt5
 PythonQwt
-h5py
 #drone related
 pymavlink
 pyserial

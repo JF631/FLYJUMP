@@ -10,13 +10,13 @@ import threading
 import time
 
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
-from PyQt5.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QObject, QRunnable, pyqtSignal
 
 from utils.controlsignals import ControlSignals, SharedBool
 from utils.exception import FileNotFoundException, GeneralException
 from utils.filehandler import FileHandler, ParameterFile
+from utils.poly import Polynomials
 
 from .eval import EvalType, Filter, Input
 from .frame import Frame
@@ -392,20 +392,21 @@ class Video(QRunnable):
         knee_angles = []
         lost_frames = 0
         velocity_frames = 1
-        counter = 0
         analyzed_counter = 0
         self.__current_frame.update(self.__frame_buffer.pop())
+        counter = 1
         foot_pos = np.empty((2,2), dtype='f4')
         hip_pos = np.empty((2,), dtype='f4')
         prev_hip_pos = np.empty_like(hip_pos)
         vel_vec = np.empty((2,), dtype='f4')
         param_file = ParameterFile(self.get_analysis_path(), self.signals)
+        run_times = []
+        start1 = time.time()
         while True:
             if self.abort.get():
                 self.terminate()
                 break
             if self.__frame_buffer.current_frames() > 0:
-                start = time.time()
                 self.__current_frame.update(self.__frame_buffer.pop())
                 playback = True
                 if self.__current_frame is None:
@@ -414,10 +415,13 @@ class Video(QRunnable):
                 self.__current_frame.pre_process(
                     self.__filter, inplace=self.__save_filter_output
                 )
+                start = time.time()
                 res = self.__detector.get_body_key_points(
                     self.__current_frame.to_mediapipe_image(), counter
                 )
                 if res.pose_landmarks:
+                    end = time.time()
+                    run_times.append((end - start))
                     self.__current_frame.annotate(
                         res.pose_landmarks, as_overlay=self.__marker_overlay
                     )
@@ -429,6 +433,7 @@ class Video(QRunnable):
                         or np.any(hip_pos > 1.0)
                         or np.any(hip_pos < 0.0)
                     ):
+                        counter +=1 #mediapipe needs a monotonically increasing counter
                         continue
                     param_file.save(self.__current_frame)
                     if self.__show_velocity_vectors:
@@ -439,8 +444,6 @@ class Video(QRunnable):
                     foot_pos = self.__current_frame.foot_pos()
                     hip_pos = self.__current_frame.hip_pos()
                     vel_vec = hip_pos - prev_hip_pos
-                    end = time.time()
-                    fps = 1 / (end - start)
                     hip_height.append(1 - hip_pos[1])
                     knee_angles.append(self.__current_frame.knee_angles())
                     frame_params = np.hstack(
@@ -466,8 +469,11 @@ class Video(QRunnable):
         # self.__current_frame.clear()s
         lost_frames = (1 - (counter / self.__frame_count)) * 100
         param_file.close()
+        start2 = time.time()
         tkf_frame = self.takeoff_frame(hip_height=hip_height,
                                        knee_angles=knee_angles, full=False)
+        end2 = time.time()
+        end1 = time.time()
         if tkf_frame:
             print(f"takeoff detected at {tkf_frame}")
             param_file.add_metadata(('takeoff', tkf_frame))
@@ -480,6 +486,12 @@ class Video(QRunnable):
               lost frames: {self.__frame_count - counter} 
               ({lost_frames:.2f}%)"""
         )
+        print(f'tkf frame runtime {(end2 - start2)}')
+        print(f"anlyzed: {analyzed_counter} vs actual: {counter}")
+        run_times = np.array(run_times)
+        print(f'total runtime {(end1 - start1)}')
+        print(f'mean runtime {np.mean(run_times)}')
+        print(f'standard deviation: {np.std(run_times)}')
         self.signals.finished.emit(self.get_analysis_path())
         cv2.destroyAllWindows()
 
@@ -676,6 +688,115 @@ class Video(QRunnable):
         angle = Video.angle(hip_vel_vec, hip_horizontal_vec)
         return (angle, *hip_vel_vec)
 
+    def regressions2(self, hip_height: np.ndarray, knee_angles: np.ndarray,
+                    full: bool = False):
+        total_error = 1e7
+        changing_points = (0, 0)
+        if full:
+            possible_indices = []
+        n = len(hip_height)
+        hip_height = np.array(hip_height, dtype='f8')
+        if full:
+            all_errors = np.empty((n, n), dtype='f8')
+        for i in range(2, n - 4):
+            x_runup = np.arange(i, dtype='f8') # hip_height[:i]
+            hip_height_runup = hip_height[:i]
+            for j in range(i + 2, n - 2):
+                x_jump = np.arange(j - i, dtype='f8')  # hip_height[i:j]
+                x_landing = np.arange(n - j, dtype='f8')  # hip_height[j:]
+                _, residuals_runup, _, _, _ = np.polyfit(
+                    x_runup, hip_height_runup, 1, full=True
+                )
+                hip_fit_jump, residuals_jump, _, _, _ = np.polyfit(
+                    x_jump, hip_height[i:j], 2, full=True
+                )
+                _, residuals_landing, _, _, _ = np.polyfit(
+                    x_landing, hip_height[j:], 1, full=True
+                )
+                fitting_error = residuals_runup + residuals_jump + residuals_landing
+                if fitting_error >= total_error:
+                    continue
+                if fitting_error and full:
+                    all_errors[i, j] = fitting_error
+                """
+                since we already know the fitted jumping curve must be of form
+                -ax^2 + bx + c, we know a = hip_fit_jump[0] < 0.
+                And, as the jumping leg is fully extended during takeoff, the
+                matching knee angle must be above 170 degrees
+                """
+                if (fitting_error < total_error and hip_fit_jump[0] < 0
+                    and knee_angles[i][1] >= 170.0):
+                    total_error = fitting_error
+                    changing_points = (i, j)
+        if full:
+            lower_bound = total_error - total_error * 0.1
+            upper_bound = total_error + total_error * 0.1
+            possible_indices = np.argwhere(
+                (all_errors >= lower_bound) & (all_errors <= upper_bound)
+            )
+        if full:
+            return (changing_points, possible_indices)
+        return changing_points
+
+    def regressions(self, hip_height: np.ndarray, knee_angles: np.ndarray,
+                    full: bool = False):
+        total_error = 1e7
+        changing_points = (0, 0)
+        if full:
+            possible_indices = []
+        n = len(hip_height)
+        hip_height = np.array(hip_height, dtype='f8')
+        if full:
+            all_errors = np.empty((n, n), dtype='f8')
+        for i in range(2, n - 4):
+            x_runup = np.arange(i, dtype='f8') # hip_height[:i]
+            hip_height_runup = hip_height[:i]
+            for j in range(i + 2, n - 2):
+                x_jump = np.arange(j - i, dtype='f8')  # hip_height[i:j]
+                x_landing = np.arange(n - j, dtype='f8')  # hip_height[j:]
+                _, residuals_runup = Polynomials.fit_poly(
+                    x_runup, hip_height_runup, deg=1
+                )
+                # _, residuals_runup, _, _, _ = np.polyfit(
+                #     x_runup, hip_height_runup, 1, full=True
+                # )
+                hip_fit_jump, residuals_jump = Polynomials.fit_poly(
+                    x_jump, hip_height[i:j], deg=2
+                )
+                # hip_fit_jump, residuals_jump, _, _, _ = np.polyfit(
+                #     x_jump, hip_height[i:j], 2, full=True
+                # )
+                _, residuals_landing = Polynomials.fit_poly(
+                    x_landing, hip_height[j:], deg=1
+                )
+                # _, residuals_landing, _, _, _ = np.polyfit(
+                #     x_landing, hip_height[j:], 1, full=True
+                # )
+                fitting_error = residuals_runup + residuals_jump + residuals_landing
+                if fitting_error >= total_error:
+                    continue
+                if fitting_error and full:
+                    all_errors[i, j] = fitting_error
+                """
+                since we already know the fitted jumping curve must be of form
+                -ax^2 + bx + c, we know a = hip_fit_jump[0] < 0.
+                And, as the jumping leg is fully extended during takeoff, the
+                matching knee angle must be above 170 degrees
+                """
+                if (fitting_error < total_error and hip_fit_jump[0] < 0
+                    and knee_angles[i][1] >= 170.0):
+                    total_error = fitting_error
+                    changing_points = (i, j)
+        if full:
+            lower_bound = total_error - total_error * 0.1
+            upper_bound = total_error + total_error * 0.1
+            possible_indices = np.argwhere(
+                (all_errors >= lower_bound) & (all_errors <= upper_bound)
+            )
+        if full:
+            return (changing_points, possible_indices)
+        return changing_points
+
     def takeoff_frame(self, hip_height: np.ndarray = None,
                       knee_angles: np.ndarray = None, full: bool = False):
         """
@@ -718,80 +839,8 @@ class Video(QRunnable):
         if knee_angles is None:
             param_file.load()
             knee_angles = param_file.get_knee_angles()
-        print(knee_angles)
-        total_error = 100
-        changing_points = (0, 0)
-        if full:
-            possible_indices = []
-        runup_coeffs = []
-        jump_coeffs = []
-        land_coeffs = []
-        n = len(hip_height)
-        if full:
-            all_errors = np.empty((n, n), dtype="f4")
-        for i in range(2, n - 4):
-            for j in range(i + 2, n - 2):
-                x_runup = np.arange(i)  # hip_height[:i]
-                x_jump = np.arange(j - i)  # hip_height[i:j]
-                x_landing = np.arange(n - j)  # hip_height[j:]
-                hip_fit_runup, residuals_runup, _, _, _ = np.polyfit(
-                    x_runup, hip_height[:i], 1, full=True
-                )
-                hip_fit_jump, residuals_jump, _, _, _ = np.polyfit(
-                    x_jump, hip_height[i:j], 2, full=True
-                )
-                hip_fit_landing, residuals_landing, _, _, _ = np.polyfit(
-                    x_landing, hip_height[j:], 1, full=True
-                )
-                fitting_error = residuals_runup + residuals_jump + residuals_landing
-                if fitting_error and full:
-                    all_errors[i, j] = fitting_error
-                """
-                since we already know the fitted jumping curve must be of form
-                -ax^2 + bx + c, we know a = hip_fit_jump[0] < 0.
-                And, as the jumping leg is fully extended during takeoff, the
-                matching knee angle must be above 170 degrees
-                """
-                if (fitting_error < total_error and hip_fit_jump[0] < 0
-                    and np.any(knee_angles[i] >= 170.0)):
-                    total_error = fitting_error
-                    changing_points = (i, j)
-                    runup_coeffs = hip_fit_runup
-                    jump_coeffs = hip_fit_jump
-                    land_coeffs = hip_fit_landing
-        if full:
-            lower_bound = total_error - total_error * 0.1
-            upper_bound = total_error + total_error * 0.1
-            print("total error: {}".format(total_error))
-            possible_indices = np.argwhere(
-                (all_errors >= lower_bound) & (all_errors <= upper_bound)
-            )
-            print("shape: {}".format(possible_indices.shape))
-            print("possible: {}".format(possible_indices))
-        hip_runup = np.poly1d(runup_coeffs)
-        hip_jump = np.poly1d(jump_coeffs)
-        x_runup = np.arange(0, changing_points[0])
-        x_jump = np.arange(changing_points[0], changing_points[1])
-        x_landing = np.arange(changing_points[1], n)
-        hip_runup = np.poly1d(runup_coeffs)
-        hip_jump = np.poly1d(jump_coeffs)
-        hip_landing = np.poly1d(land_coeffs)
-        plt.xlabel("t [frames]")
-        plt.ylabel("height [norm. pix]")
-        plt.scatter(
-            changing_points[0], hip_height[changing_points[0]], label="takeoff", c="red"
-        )
-        plt.plot(hip_height, label="hip")
-        plt.plot(x_runup, hip_runup(x_runup), label="runup")
-        plt.plot(x_jump, hip_jump(np.arange(len(x_jump))), label="jump")
-        plt.plot(x_landing, hip_landing(np.arange(len(x_landing))), label="landing")
-        plt.legend()
-        file_name = "test.png"
-        plt.savefig(file_name)
-
-        if full:
-            return (changing_points, possible_indices)
-        return changing_points
+        return self.regressions(hip_height, knee_angles, full)
+        
 
     def set_control_signals(self, control_signals: ControlSignals):
         """'
