@@ -155,6 +155,8 @@ class MainWindow(QMainWindow):
             self.current_video.stop()
             self.current_video = None
         show_video = True
+        self.ui.takeoff_angle_label.clear()
+        self.ui.takeoff_frame_label.clear()
         if len(file_names) > 1:
             show_video = False
         plot_descr = {
@@ -244,7 +246,7 @@ class MainWindow(QMainWindow):
         )
         self.matplot_angle.plot2D(
             param_file.get_right_knee_angle(), label="right knee angle"
-        )
+        ) 
         self.matplot_angle.add_points(takeoff_frame, label="changing points")
         self.current_video = Video(param_file.get_video_path(),
                                    self.abort_flag)
@@ -253,7 +255,7 @@ class MainWindow(QMainWindow):
         self.ui.takeoff_frame_label.setText(
             str(param_file.get_takeoff_frame()[0]))
         self.ui.takeoff_angle_label.setText(
-            str(param_file.get_takeoff_angle()[0]))
+            str(round(param_file.get_takeoff_angle()[0], 2)))
         self.current_video.play(first_frame)
 
     def set_save_filter_output(self, state):
